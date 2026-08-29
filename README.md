@@ -62,11 +62,16 @@ Built and verified in this environment:
 - The ui-worker — typechecks clean and passes `wrangler deploy --dry-run`.
 
 Left as **explicit TODOs**, not silently assumed correct:
-- `ContainerConsoleClient`'s exec/console WebSocket URL (in
-  `Pat.Aca.LinuxLab.Api/Services/ContainerConsoleClient.cs`) is written from
-  the documented shape of the API `az containerapp exec` uses, but hasn't
-  been run against a real subscription — verify it against Microsoft's
-  current REST reference before relying on it.
+- `ContainerConsoleClient`'s exec connection (in
+  `Pat.Aca.LinuxLab.Api/Services/ContainerConsoleClient.cs`) reads
+  `ContainerAppReplicaContainer.ExecEndpoint` straight off the Azure SDK
+  rather than hand-constructing a URL — confirmed to exist via reflection
+  against the real installed `Azure.ResourceManager.AppContainers` package
+  (an earlier hand-built URL guess, based on `az containerapp exec`'s
+  internal implementation, got a real 404 against a live app). The exact
+  scheme/query-string shape `ExecEndpoint` returns is still unverified
+  against a live subscription — still worth a close look at the first real
+  connection attempt.
 - The Cloudflare Access identity check now cryptographically verifies
   `Cf-Access-Jwt-Assertion` against Cloudflare's JWKS (`JwtBearer`, wired up
   in `Program.cs`) instead of trusting the header as plain text — but that's
