@@ -46,7 +46,7 @@ public sealed class LabSessionManager : BackgroundService, ILabSessionManager
     {
         EnforceStartRate(userEmail);
 
-        var containerAppName = $"lab-{sessionId[..Math.Min(8, sessionId.Length)].ToLowerInvariant()}";
+        var containerAppName = BuildContainerAppName(sessionId);
         _logger.LogInformation("Starting lab session {SessionId} for {User} as {ContainerApp}", sessionId, userEmail, containerAppName);
 
         var resourceGroupId = ResourceGroupResource.CreateResourceIdentifier(_options.SubscriptionId, _options.ResourceGroup);
@@ -161,6 +161,24 @@ public sealed class LabSessionManager : BackgroundService, ILabSessionManager
                 // shutting down — expected
             }
         }
+    }
+
+    /// <summary>
+    /// Container App names must be lowercase alphanumeric-or-hyphen, start
+    /// alphabetic, end alphanumeric, and never contain "--". SignalR
+    /// connection ids are base64url (can contain '-'/'_'), so a naive
+    /// substring can land on any of those forbidden shapes — confirmed by
+    /// a real ContainerAppInvalidName failure ("lab-fhlqskj-", a trailing
+    /// hyphen from the raw id). Filtering to alphanumeric-only before
+    /// prefixing rules out every one of those cases at once, not just the
+    /// specific one that happened to be hit.
+    /// </summary>
+    private static string BuildContainerAppName(string sessionId)
+    {
+        var alphanumeric = new string(sessionId.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+        if (alphanumeric.Length > 8) alphanumeric = alphanumeric[..8];
+        if (alphanumeric.Length == 0) alphanumeric = Guid.NewGuid().ToString("N")[..8]; // pathological fallback
+        return $"lab-{alphanumeric}";
     }
 
     /// <summary>Rejects a session start once a user has started too many in the last rolling hour — the real cost/abuse guard, since this is what actually creates a billable Container App.</summary>
