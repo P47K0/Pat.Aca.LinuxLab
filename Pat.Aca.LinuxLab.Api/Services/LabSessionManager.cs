@@ -116,6 +116,13 @@ public sealed class LabSessionManager : BackgroundService, ILabSessionManager
 
     public Task SendInputAsync(string sessionId, string data)
     {
+        // Diagnostic: confirms whether keystrokes reach the server at all,
+        // to bisect a "typing does nothing" report between the browser
+        // (never sending / SendInput never invoked) and the server-to-
+        // container relay (sending, but ContainerConsoleClient can't
+        // deliver it) without needing DevTools access.
+        _logger.LogInformation("SendInputAsync: {Length} char(s) for session {SessionId}", data.Length, sessionId);
+
         if (_sessions.TryGetValue(sessionId, out var session))
         {
             session.LastActivityAt = DateTimeOffset.UtcNow;

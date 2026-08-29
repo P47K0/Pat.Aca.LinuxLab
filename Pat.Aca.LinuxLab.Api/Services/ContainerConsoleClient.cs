@@ -123,7 +123,18 @@ public sealed class ContainerConsoleClient : IContainerConsoleClient
 
     public async Task SendAsync(string sessionId, string data)
     {
-        if (!_sockets.TryGetValue(sessionId, out var socket) || socket.State != WebSocketState.Open) return;
+        var found = _sockets.TryGetValue(sessionId, out var socket);
+        if (!found || socket!.State != WebSocketState.Open)
+        {
+            // Was a fully silent no-op before — meaning input could be lost
+            // here with zero trace anywhere. Log it: either the socket was
+            // never stored for this session, or it's in some state other
+            // than Open by the time typing actually happens.
+            _logger.LogWarning(
+                "SendAsync: no open socket for session {SessionId} (found={Found}, state={State})",
+                sessionId, found, socket?.State);
+            return;
+        }
         var bytes = Encoding.UTF8.GetBytes(data);
         // Binary, not Text: output arrives and renders fine regardless of
         // frame type (bytes are decoded as UTF-8 either way in
