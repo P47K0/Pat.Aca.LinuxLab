@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
-using Azure.Core;
 using Azure.ResourceManager;
 using Azure.ResourceManager.AppContainers;
 using Microsoft.Extensions.Options;
@@ -13,15 +12,13 @@ public sealed class ContainerConsoleClient : IContainerConsoleClient
 {
     private const string ContainerName = "lab"; // must match the container name set in LabSessionManager.StartSessionAsync
 
-    private readonly TokenCredential _credential;
     private readonly ArmClient _arm;
     private readonly LabSessionOptions _options;
     private readonly ILogger<ContainerConsoleClient> _logger;
     private readonly ConcurrentDictionary<string, ClientWebSocket> _sockets = new();
 
-    public ContainerConsoleClient(TokenCredential credential, ArmClient arm, IOptions<LabSessionOptions> options, ILogger<ContainerConsoleClient> logger)
+    public ContainerConsoleClient(ArmClient arm, IOptions<LabSessionOptions> options, ILogger<ContainerConsoleClient> logger)
     {
-        _credential = credential;
         _arm = arm;
         _options = options.Value;
         _logger = logger;
@@ -29,13 +26,20 @@ public sealed class ContainerConsoleClient : IContainerConsoleClient
 
     public async Task ConnectAsync(LabSession session, Func<string, Task> onOutput, CancellationToken ct)
     {
-        var uri = await ResolveExecUriAsync(session, ct);
+        var appId = ContainerAppResource.CreateResourceIdentifier(
+            _options.SubscriptionId, _options.ResourceGroup, session.ContainerAppName);
+        var app = _arm.GetContainerAppResource(appId);
 
-        var token = await _credential.GetTokenAsync(
-            new TokenRequestContext(new[] { "https://management.azure.com/.default" }), ct);
+        var uri = await ResolveExecUriAsync(app, session, ct);
+
+        // Confirmed via `az containerapp exec`'s own source: the WebSocket does
+        // NOT take a normal ARM-scoped bearer token (that's what the earlier
+        // version of this file used, and got a real 401) — it needs a separate,
+        // short-lived token from this dedicated operation instead.
+        var authToken = (await app.GetAuthTokenAsync(ct)).Value.Token;
 
         var socket = new ClientWebSocket();
-        socket.Options.SetRequestHeader("Authorization", $"Bearer {token.Token}");
+        socket.Options.SetRequestHeader("Authorization", $"Bearer {authToken}");
         await socket.ConnectAsync(uri, ct);
         _sockets[session.SessionId] = socket;
 
@@ -46,18 +50,15 @@ public sealed class ContainerConsoleClient : IContainerConsoleClient
     /// Finds the running replica's exec endpoint for this session's container app,
     /// using ExecEndpoint straight off the SDK's replica/container data — Azure
     /// itself hands back a ready-to-use URL, so this doesn't hand-construct one
-    /// the way `az containerapp exec`'s own source does internally. Confirmed via
-    /// reflection against the actual installed Azure.ResourceManager.AppContainers
-    /// package that ContainerAppReplicaContainer.ExecEndpoint exists; the exact
-    /// scheme/query-string shape it returns is still unverified against a live
-    /// subscription, hence the defensive handling below and the log line if
-    /// nothing is found.
+    /// the way `az containerapp exec`'s own source does internally. Confirmed
+    /// working end-to-end against a real revision/replica (a real
+    /// ContainerAppInvalidName and then a real 401 both got fixed by earlier
+    /// iterations of this file, and the resolved path itself has been confirmed
+    /// correct in production logs) — only the auth token was still wrong, fixed
+    /// above.
     /// </summary>
-    private async Task<Uri> ResolveExecUriAsync(LabSession session, CancellationToken ct)
+    private async Task<Uri> ResolveExecUriAsync(ContainerAppResource app, LabSession session, CancellationToken ct)
     {
-        var appId = ContainerAppResource.CreateResourceIdentifier(
-            _options.SubscriptionId, _options.ResourceGroup, session.ContainerAppName);
-        var app = _arm.GetContainerAppResource(appId);
         var appData = (await app.GetAsync(ct)).Value.Data;
 
         var revisionName = appData.LatestReadyRevisionName ?? appData.LatestRevisionName
