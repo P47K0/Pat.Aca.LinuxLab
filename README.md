@@ -107,6 +107,12 @@ Left as **explicit TODOs**, not silently assumed correct:
 
 ## Manual setup (not code — done once, by hand)
 
+0. **Activate Cloudflare Zero Trust** on the account, if it isn't already
+   (one-time per account, not per project — skip if you've used Access
+   before): Cloudflare dashboard → **Zero Trust** → **Get started** →
+   **Free plan** → **Activate**. It asks for a credit card even though the
+   free plan itself is free — that's just how Cloudflare gates the Zero
+   Trust product, not a sign you're about to be charged.
 1. **Cloudflare Access application** covering both `lab.koorevaar.com` (the
    Worker) and the API's hostname (e.g. `api.lab.koorevaar.com`) under one
    Access app, so a single login covers both. Free tier, email allow-list —
