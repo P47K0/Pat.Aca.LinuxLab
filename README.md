@@ -168,7 +168,16 @@ Left as **explicit TODOs**, not silently assumed correct:
    `AZURE_RESOURCE_GROUP`, `ACA_ENVIRONMENT_NAME`, `CF_ACCESS_TEAM_DOMAIN`,
    `CF_ACCESS_AUDIENCE` (from step 2). `API_SELF_URL` is chicken-and-egg
    (unknown until the first create prints the app's FQDN) — leave it unset
-   for the first `deploy-api.yml` run, then set it and re-run.
+   for the first `deploy-api.yml` run, then set it and re-run. Find it as
+   **Application Url** on the Container App's Overview page in the portal
+   (or in the workflow's own log output) — and use that raw
+   `*.azurecontainerapps.io` URL, **not** the `api.lab.koorevaar.com`
+   custom domain. `SelfUrl` is only ever used for internal container-to-
+   container calls (the simulator shims' progress callbacks to
+   `/internal/progress`, which is deliberately unauthenticated, unlike the
+   SignalR hub) — routing that through Cloudflare would be pointless, and
+   would actually break once step 8's ingress restriction is in place,
+   since that internal traffic doesn't originate from a Cloudflare IP.
 7. **`Pat.Aca.LinuxLab.Api`'s local config** (`appsettings.Development.json`
    — never committed non-empty): `LabSession` (`SubscriptionId`,
    `ResourceGroup`, `ContainerAppsEnvironmentName`, `LabImage`, `SelfUrl`)
