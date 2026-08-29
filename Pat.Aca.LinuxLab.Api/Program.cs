@@ -40,6 +40,28 @@ builder.Services
                 }
                 return Task.CompletedTask;
             },
+            // Diagnostic logging — appsettings.json's Microsoft.AspNetCore:
+            // Warning suppresses the framework's own detailed failure
+            // reasons by default. This category isn't under that prefix, so
+            // it logs at the Default level regardless. Safe to leave in
+            // permanently; it's a handful of log lines only on the failure
+            // path, not per-request noise on success.
+            OnAuthenticationFailed = context =>
+            {
+                context.HttpContext.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("CloudflareAccessAuth")
+                    .LogWarning(context.Exception, "JWT validation failed");
+                return Task.CompletedTask;
+            },
+            OnChallenge = context =>
+            {
+                context.HttpContext.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("CloudflareAccessAuth")
+                    .LogWarning("JWT challenge issued: {Error} {ErrorDescription}", context.Error, context.ErrorDescription);
+                return Task.CompletedTask;
+            },
         };
     });
 builder.Services.AddAuthorization();
