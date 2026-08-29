@@ -141,6 +141,15 @@ Left as **explicit TODOs**, not silently assumed correct:
    3. *Then* the Worker's own **Access** tab → **Protect this Worker** will
       let you pick that already-created policy (`Owner`) instead of being
       limited to the two canned options.
+   4. On the application's **Additional settings** (same tab as the AUD
+      tag), enable **"Bypass options requests to origin."** Without this,
+      Access intercepts the CORS preflight `OPTIONS` request itself before
+      it ever reaches the API — the preflight can't carry the Access auth
+      cookie (browsers don't send credentials on preflight requests, only
+      on the real one), so Access blocks it outright, and neither the
+      app-level nor the ACA ingress-level CORS config (step 4) ever gets a
+      chance to respond. Safe to enable specifically because both of those
+      are already configured — the origin handles CORS enforcement itself.
 2. **Note the Access app's `TeamDomain` and `Audience`** while you're
    already in that dashboard — steps 6 and 7 below both need these two
    values. `TeamDomain` is account-level: Zero Trust → **Settings** (shown
