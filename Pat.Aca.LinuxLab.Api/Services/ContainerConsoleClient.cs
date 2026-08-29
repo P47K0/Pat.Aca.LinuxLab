@@ -117,7 +117,17 @@ public sealed class ContainerConsoleClient : IContainerConsoleClient
     {
         if (!_sockets.TryGetValue(sessionId, out var socket) || socket.State != WebSocketState.Open) return;
         var bytes = Encoding.UTF8.GetBytes(data);
-        await socket.SendAsync(bytes, WebSocketMessageType.Text, endOfMessage: true, CancellationToken.None);
+        // Binary, not Text: output arrives and renders fine regardless of
+        // frame type (bytes are decoded as UTF-8 either way in
+        // PumpOutputAsync), but keystrokes sent as Text frames were
+        // silently doing nothing — confirmed for real (a working prompt,
+        // zero response to typing). PTY-over-WebSocket protocols
+        // (docker exec, kubectl exec, and similar) commonly expect binary
+        // framing for the raw terminal stream specifically because PTY
+        // input isn't guaranteed valid UTF-8; Azure's own protocol isn't
+        // publicly documented at this level of detail, so this is the
+        // most likely single-variable fix rather than a confirmed spec.
+        await socket.SendAsync(bytes, WebSocketMessageType.Binary, endOfMessage: true, CancellationToken.None);
     }
 
     public async Task DisconnectAsync(string sessionId)
