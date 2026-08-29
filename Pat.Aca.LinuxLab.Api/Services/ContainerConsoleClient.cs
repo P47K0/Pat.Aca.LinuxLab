@@ -131,8 +131,8 @@ public sealed class ContainerConsoleClient : IContainerConsoleClient
             // never stored for this session, or it's in some state other
             // than Open by the time typing actually happens.
             _logger.LogWarning(
-                "SendAsync: no open socket for session {SessionId} (found={Found}, state={State})",
-                sessionId, found, socket?.State);
+                "SendAsync: no open socket for session {SessionId} (found={Found}, state={State}, closeStatus={CloseStatus}, closeDescription={CloseDescription})",
+                sessionId, found, socket?.State, socket?.CloseStatus, socket?.CloseStatusDescription);
             return;
         }
         var bytes = Encoding.UTF8.GetBytes(data);
@@ -167,7 +167,18 @@ public sealed class ContainerConsoleClient : IContainerConsoleClient
             while (socket.State == WebSocketState.Open && !ct.IsCancellationRequested)
             {
                 var result = await socket.ReceiveAsync(buffer, ct);
-                if (result.MessageType == WebSocketMessageType.Close) break;
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    // The actual "why" for a real, fast close after the prompt
+                    // renders but before any typing gets a response — captured
+                    // at the earliest possible point (the receive result
+                    // itself), rather than read back off socket state later.
+                    _logger.LogWarning(
+                        "Exec socket for session {SessionId} received Close: status={CloseStatus}, description={CloseDescription}",
+                        sessionId, result.CloseStatus, result.CloseStatusDescription);
+                    await onOutput("[lab] Your session disconnected. Refresh to start a new one.\r\n");
+                    break;
+                }
 
                 var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
 
