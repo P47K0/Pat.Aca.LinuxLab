@@ -46,55 +46,71 @@ public sealed class ContainerConsoleClient : IContainerConsoleClient
         _ = PumpOutputAsync(session.SessionId, socket, onOutput, ct);
     }
 
+    private static readonly TimeSpan ReadyTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan ReadyPollInterval = TimeSpan.FromSeconds(2);
+
     /// <summary>
     /// Finds the running replica's exec endpoint for this session's container app,
     /// using ExecEndpoint straight off the SDK's replica/container data — Azure
     /// itself hands back a ready-to-use URL, so this doesn't hand-construct one
-    /// the way `az containerapp exec`'s own source does internally. Confirmed
-    /// working end-to-end against a real revision/replica (a real
-    /// ContainerAppInvalidName and then a real 401 both got fixed by earlier
-    /// iterations of this file, and the resolved path itself has been confirmed
-    /// correct in production logs) — only the auth token was still wrong, fixed
-    /// above.
+    /// the way `az containerapp exec`'s own source does internally.
+    ///
+    /// Polls until the container reports IsReady, rather than resolving once
+    /// immediately after creation: a real "ClusterExecEndpointConnectionError"
+    /// (500 instead of 101) came back from *Azure's own* relay to the
+    /// container, not from this connection to Azure — the most likely
+    /// explanation is a startup race, since ARM reporting the Container App as
+    /// created doesn't mean the process inside it has actually finished
+    /// starting yet. If it never becomes ready within the timeout, that's a
+    /// different, real problem worth its own investigation, so this still
+    /// throws rather than silently trying an endpoint that isn't ready.
     /// </summary>
     private async Task<Uri> ResolveExecUriAsync(ContainerAppResource app, LabSession session, CancellationToken ct)
     {
-        var appData = (await app.GetAsync(ct)).Value.Data;
+        var deadline = DateTimeOffset.UtcNow + ReadyTimeout;
 
-        var revisionName = appData.LatestReadyRevisionName ?? appData.LatestRevisionName
-            ?? throw new InvalidOperationException($"Container app {session.ContainerAppName} has no revision yet");
-
-        var revision = await app.GetContainerAppRevisionAsync(revisionName, ct);
-
-        ContainerAppReplicaData? replica = null;
-        await foreach (var candidate in revision.Value.GetContainerAppReplicas().GetAllAsync(ct))
+        while (true)
         {
-            replica = candidate.Data;
-            break; // any running replica will do — this is a single-node lab, not a scaled service
+            var appData = (await app.GetAsync(ct)).Value.Data;
+            var revisionName = appData.LatestReadyRevisionName ?? appData.LatestRevisionName;
+
+            if (revisionName is not null)
+            {
+                var revision = await app.GetContainerAppRevisionAsync(revisionName, ct);
+
+                ContainerAppReplicaData? replica = null;
+                await foreach (var candidate in revision.Value.GetContainerAppReplicas().GetAllAsync(ct))
+                {
+                    replica = candidate.Data;
+                    break; // any running replica will do — this is a single-node lab, not a scaled service
+                }
+
+                var container = replica?.Containers.FirstOrDefault(c => c.Name == ContainerName)
+                    ?? replica?.Containers.FirstOrDefault();
+
+                if (container is { IsReady: true } && !string.IsNullOrEmpty(container.ExecEndpoint))
+                {
+                    var execUri = new Uri(container.ExecEndpoint);
+                    var scheme = execUri.Scheme is "https" or "http" ? "wss" : execUri.Scheme;
+                    var query = string.IsNullOrEmpty(execUri.Query) ? "?command=%2Fbin%2Fbash" : $"{execUri.Query}&command=%2Fbin%2Fbash";
+
+                    _logger.LogInformation("Resolved exec endpoint for {ContainerApp}: {Host}{Path}", session.ContainerAppName, execUri.Host, execUri.AbsolutePath);
+                    return new UriBuilder(execUri) { Scheme = scheme, Port = -1, Query = query.TrimStart('?') }.Uri;
+                }
+
+                _logger.LogInformation(
+                    "Container app {ContainerApp} not ready for exec yet (IsReady={IsReady}) — retrying",
+                    session.ContainerAppName, container?.IsReady);
+            }
+
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                throw new InvalidOperationException(
+                    $"Container app {session.ContainerAppName} never became ready for exec within {ReadyTimeout.TotalSeconds}s");
+            }
+
+            await Task.Delay(ReadyPollInterval, ct);
         }
-
-        if (replica is null)
-        {
-            throw new InvalidOperationException($"No replicas found for {session.ContainerAppName} revision {revisionName}");
-        }
-
-        var container = replica.Containers.FirstOrDefault(c => c.Name == ContainerName)
-            ?? replica.Containers.FirstOrDefault()
-            ?? throw new InvalidOperationException($"Replica {replica.Name} has no containers");
-
-        if (string.IsNullOrEmpty(container.ExecEndpoint))
-        {
-            throw new InvalidOperationException(
-                $"Container {container.Name} in replica {replica.Name} has no ExecEndpoint — replica may not be running yet");
-        }
-
-        var execUri = new Uri(container.ExecEndpoint);
-        var scheme = execUri.Scheme is "https" or "http" ? "wss" : execUri.Scheme;
-        var query = string.IsNullOrEmpty(execUri.Query) ? "?command=%2Fbin%2Fbash" : $"{execUri.Query}&command=%2Fbin%2Fbash";
-
-        _logger.LogInformation("Resolved exec endpoint for {ContainerApp}: {Host}{Path}", session.ContainerAppName, execUri.Host, execUri.AbsolutePath);
-
-        return new UriBuilder(execUri) { Scheme = scheme, Port = -1, Query = query.TrimStart('?') }.Uri;
     }
 
     public async Task SendAsync(string sessionId, string data)
