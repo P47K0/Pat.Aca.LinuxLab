@@ -6,12 +6,55 @@
 set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
+is_help() { [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; }
+
+main_help() {
+  cat <<'EOF'
+kubectl controls the Kubernetes cluster manager.
+
+[lab] This simulator only implements a few read-only commands, enough to
+confirm "kubeadm init" worked. General resource management (apply, edit,
+describe, delete, ...) isn't in scope for this lab — see the BRD's non-goals.
+
+Basic Commands:
+  get           Display one or many resources (nodes, pods)
+
+Other Commands:
+  cluster-info  Display addresses of the control plane
+  version       Print the client and server version information
+
+Use "kubectl <command> --help" for more information about a given command.
+EOF
+}
+
+get_help() {
+  cat <<'EOF'
+Display one or many resources.
+
+Usage:
+  kubectl get (nodes | pods) [flags]
+
+[lab] Only "nodes" and "pods" are simulated.
+EOF
+}
+
+cmd="${1:-}"; shift || true
+
+if [ -z "$cmd" ] || is_help "$cmd"; then
+  main_help
+  exit 0
+fi
+
+if [ "$cmd" = "get" ] && is_help "${1:-}"; then
+  get_help
+  exit 0
+fi
+
 if [ "$(lab::cluster_state)" = "none" ]; then
   echo "The connection to the server localhost:8080 was refused - did you specify the right host or port?" >&2
   exit 1
 fi
 
-cmd="${1:-}"; shift || true
 case "$cmd" in
   version)
     echo "Client Version: v1.31.2 (lab simulator)"
@@ -42,6 +85,7 @@ case "$cmd" in
     ;;
   *)
     echo "error: general kubectl resource management isn't part of this lab yet (see the BRD's non-goals)" >&2
+    echo "run 'kubectl --help' for what this lab does support" >&2
     exit 1
     ;;
 esac

@@ -14,14 +14,117 @@ require_pkg() {
   fi
 }
 
+is_help() { [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; }
+
+main_help() {
+  cat <<'EOF'
+kubeadm: easily bootstrap a secure Kubernetes cluster
+
+[lab] This is a training simulator for the CKA lab — it implements the
+install/upgrade workflow only, single control-plane node. Real kubeadm has
+more subcommands (join, token, certs, config, ...); those aren't simulated
+here and will fail with "unrecognized command".
+
+Basic Commands:
+  init          Run this command in order to set up the Kubernetes control plane
+  upgrade       Upgrade your cluster smoothly to a newer version with this command
+  reset         Run this command to revert any changes made by "kubeadm init"
+
+Other Commands:
+  version       Print the version of kubeadm
+
+Use "kubeadm <command> --help" for more information about a given command.
+EOF
+}
+
+init_help() {
+  cat <<'EOF'
+Run this command in order to set up the Kubernetes control plane.
+
+Usage:
+  kubeadm init [flags]
+
+Flags:
+      --pod-network-cidr string             Specify range of IP addresses for the pod network
+      --ignore-preflight-errors strings     A list of checks whose errors will be shown as warnings
+      --kubernetes-version string           Choose a specific Kubernetes version for the control plane
+  -h, --help                                help for init
+
+[lab] Flags are accepted but not enforced by this simulator — containerd
+and kubelet must already be "installed" (apt-get install -y ...) first.
+EOF
+}
+
+upgrade_help() {
+  cat <<'EOF'
+Upgrade your cluster smoothly to a newer version with this command.
+
+Usage:
+  kubeadm upgrade <subcommand> [flags]
+
+Subcommands:
+  plan          Check which versions are available to upgrade to and validate whether your current cluster is upgradeable
+  apply         Upgrade your Kubernetes cluster to the specified version
+
+Use "kubeadm upgrade <subcommand> --help" for more information.
+
+[lab] plan must run before apply — see the BRD's §06 for why that's enforced.
+EOF
+}
+
+upgrade_plan_help() {
+  cat <<'EOF'
+Check which versions are available to upgrade to and validate whether your
+current cluster is upgradeable.
+
+Usage:
+  kubeadm upgrade plan [flags]
+
+[lab] Must run before "kubeadm upgrade apply" — see the BRD's §06.
+EOF
+}
+
+upgrade_apply_help() {
+  cat <<'EOF'
+Upgrade your Kubernetes cluster to the specified version.
+
+Usage:
+  kubeadm upgrade apply <version> [flags]
+
+Flags:
+  -y, --yes     Perform the upgrade and do not prompt for confirmation
+
+[lab] Requires "kubeadm upgrade plan" to have run first — see the BRD's §06.
+EOF
+}
+
+reset_help() {
+  cat <<'EOF'
+Run this command to revert any changes made by "kubeadm init".
+
+Usage:
+  kubeadm reset [flags]
+EOF
+}
+
 cmd="${1:-}"; shift || true
+
+if [ -z "$cmd" ] || is_help "$cmd"; then
+  main_help
+  exit 0
+fi
 
 case "$cmd" in
   version)
+    if is_help "${1:-}"; then
+      echo "Print the version of kubeadm."
+      exit 0
+    fi
     echo 'kubeadm version: &version.Info{Major:"1", Minor:"31", GitVersion:"v1.31.2"} (lab simulator)'
     ;;
 
   init)
+    if is_help "${1:-}"; then init_help; exit 0; fi
     for req in containerd kubelet kubeadm; do require_pkg "$req"; done
     if [ "$(lab::cluster_state)" != "none" ]; then
       echo "error: a cluster is already initialized on this node" >&2
@@ -59,7 +162,12 @@ EOF
     ;;
 
   upgrade)
+    if is_help "${1:-}"; then upgrade_help; exit 0; fi
     sub="${1:-}"; shift || true
+    # Help must work regardless of cluster state — check it before the
+    # "no cluster found" gate below, not after.
+    if [ "$sub" = "plan" ] && is_help "${1:-}"; then upgrade_plan_help; exit 0; fi
+    if [ "$sub" = "apply" ] && is_help "${1:-}"; then upgrade_apply_help; exit 0; fi
     if [ "$(lab::cluster_state)" = "none" ]; then
       echo "error: couldn't create a Kubernetes client: no cluster found" >&2
       echo "       run 'kubeadm init' first" >&2
@@ -120,6 +228,7 @@ EOF
     ;;
 
   reset)
+    if is_help "${1:-}"; then reset_help; exit 0; fi
     rm -f "$LAB_STATE_DIR"/cluster-* "$LAB_STATE_DIR"/upgrade-planned
     echo "[reset] Deleting contents of stateful directories"
     echo "The node has been reset and is ready for a new 'kubeadm init'."
@@ -129,6 +238,7 @@ EOF
   *)
     echo "kubeadm (CKA lab simulator): unrecognized command '$cmd'" >&2
     echo "supported: init, upgrade plan, upgrade apply <version>, reset, version" >&2
+    echo "run 'kubeadm --help' for details" >&2
     exit 1
     ;;
 esac

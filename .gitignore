@@ -12,3 +12,4 @@ dist/
 # OS / editor
 .DS_Store
 *.swp
+/Pat.Aca.LinuxLab.Api/.vs

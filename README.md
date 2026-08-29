@@ -30,6 +30,16 @@ action — install → init → `kubectl get nodes` → upgrade plan/apply — t
 sequencing is enforced (e.g. `upgrade apply` before `upgrade plan` fails
 with a realistic error and a hint).
 
+`--help`/`-h` works on `kubeadm`, `kubectl`, and `systemctl` (including
+per-subcommand, e.g. `kubeadm upgrade apply --help`), same as the real
+exam's reference material — and works regardless of cluster state, so
+`kubeadm upgrade plan --help` doesn't require a cluster to already exist.
+Deliberately honest about scope, though: it only lists what this simulator
+actually implements (no `join`/`token`/`certs`/`config`), rather than
+mirroring real kubeadm's full help and setting a trap for commands that'd
+then fail. `apt-get --help`/`apt-mark --help` already fall through to the
+real binaries unmodified — nothing to add there.
+
 ## Repo layout
 
 ```

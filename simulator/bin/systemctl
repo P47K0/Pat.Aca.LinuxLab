@@ -8,6 +8,29 @@
 set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+  cat <<'EOF'
+systemctl [OPTIONS...] COMMAND [UNIT...]
+
+[lab] This container has no real init system (PID 1 is bash, on purpose —
+see the Dockerfile), so this fakes just enough service state (enabled/
+active, per unit name) for realistic practice.
+
+Unit Commands:
+  start UNIT...        Start (activate) one or more units
+  stop UNIT...         Stop (deactivate) one or more units
+  restart UNIT...      Restart one or more units
+  enable UNIT...       Enable one or more unit files
+  disable UNIT...      Disable one or more unit files
+  status [UNIT...]     Show runtime status of one or more units
+  daemon-reload        Reload systemd manager configuration (no-op here)
+
+Options:
+  --now                When used with enable, start the unit(s) too
+EOF
+  exit 0
+fi
+
 action="${1:-}"; shift || true
 now=0
 services=()
