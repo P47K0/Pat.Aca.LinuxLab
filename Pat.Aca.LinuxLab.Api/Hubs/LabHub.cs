@@ -39,7 +39,12 @@ public class LabHub : Hub
             // Shouldn't happen once [Authorize] has already accepted the
             // token — but Access's claim name is asserted, not verified from
             // here, so fail closed rather than fall back to a fake identity.
-            _logger.LogWarning("Authorized connection {ConnectionId} has no 'email' claim", Context.ConnectionId);
+            // Log every claim actually present, so if "email" is wrong the
+            // real name is right there instead of guessing again.
+            var claims = string.Join(", ", Context.User?.Claims.Select(c => $"{c.Type}={c.Value}") ?? []);
+            _logger.LogWarning(
+                "Authorized connection {ConnectionId} has no 'email' claim. Actual claims: {Claims}",
+                Context.ConnectionId, claims);
             Context.Abort();
             return;
         }
@@ -52,6 +57,18 @@ public class LabHub : Hub
         {
             _logger.LogWarning(ex, "Rejected session start for {User}", email);
             await Clients.Caller.SendAsync("SessionRejected", ex.Message);
+            Context.Abort();
+            return;
+        }
+        catch (Exception ex)
+        {
+            // Anything else (most likely: the real Azure SDK call in
+            // StartSessionAsync — RBAC not yet granted, wrong resource
+            // group/environment name, etc. — none of this has run against
+            // a live subscription before now) would otherwise surface only
+            // as "connects then immediately disconnects" client-side, with
+            // nothing to go on. Log it in full instead of guessing.
+            _logger.LogError(ex, "StartSessionAsync failed for {User} ({ConnectionId})", email, Context.ConnectionId);
             Context.Abort();
             return;
         }
