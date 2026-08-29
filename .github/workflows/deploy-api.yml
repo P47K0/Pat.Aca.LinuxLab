@@ -61,6 +61,8 @@ jobs:
                 --environment ${{ vars.ACA_ENVIRONMENT_NAME }} \
                 --image "$IMAGE" \
                 --system-assigned \
+                --ingress external \
+                --target-port 8080 \
                 --env-vars \
                   LabSession__SubscriptionId=${{ secrets.AZURE_SUBSCRIPTION_ID }} \
                   LabSession__ResourceGroup="$RG" \
