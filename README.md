@@ -172,6 +172,20 @@ Left as **explicit TODOs**, not silently assumed correct:
       included), **switch the CNAME to Proxied (orange cloud)** — that's
       what actually puts Cloudflare, and Access, in the traffic path.
 
+   While in that same **Networking** blade: also set **CORS** —
+   `lab.koorevaar.com` and `api.lab.koorevaar.com` are different origins
+   (subdomains count), and the browser's SignalR negotiate call is
+   cross-origin. This is ACA's own ingress-level CORS feature, separate
+   from (and more robust than) the API's own `LabSession:AllowedOrigin`
+   app-level CORS policy — it handles the preflight `OPTIONS` request
+   before it ever reaches the app or the hub's `[Authorize]` check, so set
+   it here rather than relying on the app-level policy alone: **Allowed
+   Origins** `https://lab.koorevaar.com`, **Allow credentials** enabled
+   (required — the frontend calls with `withCredentials: true`), **Allowed
+   Methods** at least `GET, POST, OPTIONS`, **Allowed Headers** `*`. Like
+   the container's env vars, updating this via CLI overwrites the whole
+   policy rather than merging — pass the complete set each time.
+
    Both ending up proxied is what's needed for Access to gate them and for
    the API to read the `Cf-Access-*` headers — just not during the CNAME's
    own validation step.
