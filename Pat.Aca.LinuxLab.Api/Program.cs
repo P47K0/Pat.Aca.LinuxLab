@@ -24,18 +24,21 @@ builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        // MetadataAddress does the real work here (fetches Cloudflare's
-        // JWKS for signature verification). Authority is set too, but
-        // that endpoint isn't a standard OIDC discovery document (it's
-        // JWKS-only, no "issuer" field) — .NET's discovery-document
-        // parsing can't reliably derive ValidIssuer from it, so it's set
-        // explicitly instead of relying on that inference. (Found via a
-        // real "the issuer '...' is invalid" 401 with an otherwise-correct
-        // TeamDomain — Authority alone wasn't enough.)
-        options.Authority = cfAccess.TeamDomain;
-        options.MetadataAddress = $"{cfAccess.TeamDomain}/cdn-cgi/access/certs";
+        // Cloudflare's certs endpoint is a bare JWKS document, not a
+        // standard OIDC discovery document — Authority/MetadataAddress's
+        // built-in retriever can't parse either the issuer or the signing
+        // keys from it correctly (confirmed via two real failures in a
+        // row: an invalid-issuer 401, then a no-signing-keys-found 401).
+        // Skip that mechanism entirely: validate issuer/audience
+        // explicitly, and fetch signing keys directly via
+        // CloudflareJwksProvider instead of relying on any built-in
+        // discovery.
+        var certsUrl = $"{cfAccess.TeamDomain}/cdn-cgi/access/certs";
+        var jwksProvider = new CloudflareJwksProvider(new HttpClient());
         options.TokenValidationParameters.ValidIssuer = cfAccess.TeamDomain;
         options.TokenValidationParameters.ValidAudience = cfAccess.Audience;
+        options.TokenValidationParameters.IssuerSigningKeyResolver = (_, _, _, _) =>
+            jwksProvider.GetSigningKeys(certsUrl);
         options.Events = new JwtBearerEvents
         {
             // Cloudflare puts the token in a custom header, not the standard
