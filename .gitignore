@@ -1,0 +1,14 @@
+# .NET — scoped to the actual build output, not a bare "bin/"/"obj/" name
+# (that blanket form would also swallow simulator/bin, which is real source)
+Pat.Aca.LinuxLab.Api/bin/
+Pat.Aca.LinuxLab.Api/obj/
+*.user
+
+# Node / Cloudflare Workers
+node_modules/
+.wrangler/
+dist/
+
+# OS / editor
+.DS_Store
+*.swp

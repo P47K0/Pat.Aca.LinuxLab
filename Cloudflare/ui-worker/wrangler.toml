@@ -1,0 +1,18 @@
+name = "cka-lab-ui-worker"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+
+# Custom domain — requires koorevaar.com already added as a Cloudflare zone,
+# and a Cloudflare Access application covering this hostname (see the repo
+# README's "Manual setup" section; not something wrangler configures).
+routes = [
+  { pattern = "lab.koorevaar.com", custom_domain = true }
+]
+
+[vars]
+# The API's SignalR hub endpoint. Same Cloudflare Access application should
+# also cover this hostname — see the README.
+LAB_HUB_URL = "https://api.lab.koorevaar.com/hubs/lab"
+
+[observability]
+enabled = true

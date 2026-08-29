@@ -1,0 +1,147 @@
+using System.Collections.Concurrent;
+using Azure.ResourceManager;
+using Azure.ResourceManager.AppContainers;
+using Azure.ResourceManager.AppContainers.Models;
+using Azure.ResourceManager.Resources;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Options;
+using Pat.Aca.LinuxLab.Api.Hubs;
+using Pat.Aca.LinuxLab.Api.Models;
+
+namespace Pat.Aca.LinuxLab.Api.Services;
+
+/// <summary>
+/// Owns the "fresh container per session, per user" lifecycle from the BRD's
+/// §08: creates a Container App from the lab image on session start,
+/// attaches a PTY via <see cref="IContainerConsoleClient"/>, and deletes it
+/// on disconnect or after <see cref="LabSessionOptions.IdleTimeoutMinutes"/>.
+/// </summary>
+public sealed class LabSessionManager : BackgroundService, ILabSessionManager
+{
+    private readonly ArmClient _arm;
+    private readonly IContainerConsoleClient _console;
+    private readonly IHubContext<LabHub> _hub;
+    private readonly LabSessionOptions _options;
+    private readonly ILogger<LabSessionManager> _logger;
+    private readonly ConcurrentDictionary<string, LabSession> _sessions = new();
+
+    public LabSessionManager(
+        ArmClient arm,
+        IContainerConsoleClient console,
+        IHubContext<LabHub> hub,
+        IOptions<LabSessionOptions> options,
+        ILogger<LabSessionManager> logger)
+    {
+        _arm = arm;
+        _console = console;
+        _hub = hub;
+        _options = options.Value;
+        _logger = logger;
+    }
+
+    public async Task StartSessionAsync(string sessionId, string userEmail, CancellationToken ct)
+    {
+        var containerAppName = $"lab-{sessionId[..Math.Min(8, sessionId.Length)].ToLowerInvariant()}";
+        _logger.LogInformation("Starting lab session {SessionId} for {User} as {ContainerApp}", sessionId, userEmail, containerAppName);
+
+        var resourceGroupId = ResourceGroupResource.CreateResourceIdentifier(_options.SubscriptionId, _options.ResourceGroup);
+        var resourceGroup = _arm.GetResourceGroupResource(resourceGroupId);
+
+        var envId = ContainerAppManagedEnvironmentResource.CreateResourceIdentifier(
+            _options.SubscriptionId, _options.ResourceGroup, _options.ContainerAppsEnvironmentName);
+
+        var data = new ContainerAppData(_options.Location)
+        {
+            EnvironmentId = envId,
+            Configuration = new ContainerAppConfiguration
+            {
+                ActiveRevisionsMode = ContainerAppActiveRevisionsMode.Single,
+                // No public ingress on purpose — this container is only ever
+                // reached through this API's exec/console relay, never directly.
+            },
+            Template = new ContainerAppTemplate
+            {
+                Containers =
+                {
+                    new ContainerAppContainer
+                    {
+                        Name = "lab",
+                        Image = _options.LabImage,
+                        Env =
+                        {
+                            new ContainerAppEnvironmentVariable { Name = "LAB_API_URL", Value = _options.SelfUrl },
+                            new ContainerAppEnvironmentVariable { Name = "LAB_SESSION_ID", Value = sessionId },
+                        },
+                    },
+                },
+                Scale = new ContainerAppScale { MinReplicas = 1, MaxReplicas = 1 },
+            },
+        };
+
+        var apps = resourceGroup.GetContainerApps();
+        await apps.CreateOrUpdateAsync(Azure.WaitUntil.Completed, containerAppName, data, ct);
+
+        var session = new LabSession(sessionId, userEmail, containerAppName, DateTimeOffset.UtcNow);
+        _sessions[sessionId] = session;
+
+        await _console.ConnectAsync(session, chunk => _hub.Clients.Client(sessionId).SendAsync("ReceiveOutput", chunk), ct);
+    }
+
+    public async Task EndSessionAsync(string sessionId)
+    {
+        if (!_sessions.TryRemove(sessionId, out var session)) return;
+        _logger.LogInformation("Ending lab session {SessionId} ({ContainerApp})", sessionId, session.ContainerAppName);
+
+        await _console.DisconnectAsync(sessionId);
+
+        var resourceGroupId = ResourceGroupResource.CreateResourceIdentifier(_options.SubscriptionId, _options.ResourceGroup);
+        var resourceGroup = _arm.GetResourceGroupResource(resourceGroupId);
+        var app = await resourceGroup.GetContainerAppAsync(session.ContainerAppName);
+        await app.Value.DeleteAsync(Azure.WaitUntil.Started);
+    }
+
+    public Task SendInputAsync(string sessionId, string data)
+    {
+        if (_sessions.TryGetValue(sessionId, out var session))
+        {
+            session.LastActivityAt = DateTimeOffset.UtcNow;
+        }
+        return _console.SendAsync(sessionId, data);
+    }
+
+    public Task ReportProgressAsync(string sessionId, ProgressEvent evt)
+    {
+        if (_sessions.TryGetValue(sessionId, out var session))
+        {
+            session.LastActivityAt = DateTimeOffset.UtcNow;
+        }
+        return _hub.Clients.Client(sessionId).SendAsync("ChecklistUpdate", evt);
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var sweepInterval = TimeSpan.FromMinutes(1);
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            var idleCutoff = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(_options.IdleTimeoutMinutes);
+            foreach (var session in _sessions.Values)
+            {
+                if (session.LastActivityAt < idleCutoff)
+                {
+                    _logger.LogInformation(
+                        "Session {SessionId} idle past {Minutes}m — tearing down", session.SessionId, _options.IdleTimeoutMinutes);
+                    await EndSessionAsync(session.SessionId);
+                }
+            }
+
+            try
+            {
+                await Task.Delay(sweepInterval, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                // shutting down — expected
+            }
+        }
+    }
+}

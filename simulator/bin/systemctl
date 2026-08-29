@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# systemctl shim: this container has no real init system (PID 1 is bash, on
+# purpose — see the Dockerfile), so systemctl has nothing real to talk to
+# regardless of the kubeadm question. This fakes just enough service state
+# (enabled/active, per service name) for realistic enable/start/status
+# practice against containerd, kubelet, or anything else — including the
+# real systemctl's support for naming several units in one call.
+set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+
+action="${1:-}"; shift || true
+now=0
+services=()
+for arg in "$@"; do
+  case "$arg" in
+    --now) now=1 ;;
+    -*) : ;;
+    *) services+=("${arg%.service}") ;;
+  esac
+done
+
+if [ "${#services[@]}" -eq 0 ] && [ "$action" != "daemon-reload" ]; then
+  echo "systemctl: no service specified" >&2
+  exit 1
+fi
+
+status_exit=0
+
+for svc in "${services[@]:-}"; do
+  case "$action" in
+    enable)
+      read -r active enabled < <(lab::svc_get "$svc")
+      [ "$now" = 1 ] && active=active
+      lab::svc_set "$svc" "$active" enabled
+      echo "Created symlink /etc/systemd/system/multi-user.target.wants/${svc}.service → /usr/lib/systemd/system/${svc}.service."
+      [ "$now" = 1 ] && echo "${svc}.service started."
+      ;;
+    disable)
+      read -r active enabled < <(lab::svc_get "$svc")
+      lab::svc_set "$svc" "$active" disabled
+      echo "Removed /etc/systemd/system/multi-user.target.wants/${svc}.service."
+      ;;
+    start)
+      read -r active enabled < <(lab::svc_get "$svc")
+      lab::svc_set "$svc" active "$enabled"
+      ;;
+    stop)
+      read -r active enabled < <(lab::svc_get "$svc")
+      lab::svc_set "$svc" inactive "$enabled"
+      ;;
+    restart)
+      read -r active enabled < <(lab::svc_get "$svc")
+      lab::svc_set "$svc" active "$enabled"
+      ;;
+    status)
+      read -r active enabled < <(lab::svc_get "$svc")
+      if [ "$active" = "active" ]; then
+        echo "● ${svc}.service"
+        echo "     Loaded: loaded (enabled: ${enabled})"
+        echo "     Active: active (running)"
+      else
+        echo "○ ${svc}.service"
+        echo "     Loaded: loaded (enabled: ${enabled})"
+        echo "     Active: inactive (dead)"
+        status_exit=3   # matches real systemctl's exit code for an inactive unit
+      fi
+      ;;
+    daemon-reload)
+      : # no-op — nothing to reload without a real init system
+      ;;
+    *)
+      echo "systemctl (lab simulator): unrecognized action '$action'" >&2
+      exit 1
+      ;;
+  esac
+done
+
+exit "$status_exit"

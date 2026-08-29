@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# kubeadm shim: the whole reason this file exists — see the BRD's §06.
+# containerd-in-a-container needs privileges no Azure container-PaaS option
+# grants, so a real control plane can't reliably come up here. This accepts
+# the real flags, enforces the real step order, and prints realistic output
+# instead — command muscle memory without a working cluster underneath.
+set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+
+require_pkg() {
+  if ! lab::pkg_installed "$1"; then
+    echo "error: $1 not found — install it first (apt-get install -y $1)" >&2
+    exit 1
+  fi
+}
+
+cmd="${1:-}"; shift || true
+
+case "$cmd" in
+  version)
+    echo 'kubeadm version: &version.Info{Major:"1", Minor:"31", GitVersion:"v1.31.2"} (lab simulator)'
+    ;;
+
+  init)
+    for req in containerd kubelet kubeadm; do require_pkg "$req"; done
+    if [ "$(lab::cluster_state)" != "none" ]; then
+      echo "error: a cluster is already initialized on this node" >&2
+      echo "       run 'kubeadm reset' first to start over" >&2
+      exit 1
+    fi
+    cat <<'EOF'
+[init] Using Kubernetes version: v1.31.2
+[preflight] Running pre-flight checks
+[preflight] Pulling images required for setting up a Kubernetes cluster
+[certs] Generating certificates and keys ...
+[kubeconfig] Writing kubeconfig files
+[control-plane] Creating static Pod manifests
+[etcd] Creating static Pod manifest for local etcd
+[wait-control-plane] Waiting for the kubelet to boot up the control plane
+[apiclient] All control plane components are healthy
+[upload-config] Storing the configuration used in a ConfigMap
+[mark-control-plane] Marking the node as control-plane
+[bootstrap-token] Using token: lab0se.ssionsimulatedtoken
+[addons] Applied essential addon: CoreDNS
+[addons] Applied essential addon: kube-proxy
+
+Your Kubernetes control-plane has initialized successfully!
+
+To start using your cluster, run the following as a regular user:
+
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+EOF
+    touch "$LAB_STATE_DIR/cluster-initialized"
+    lab::svc_set containerd active enabled
+    lab::svc_set kubelet active enabled
+    lab::progress "kubeadm:init" ok "control plane initialized"
+    ;;
+
+  upgrade)
+    sub="${1:-}"; shift || true
+    if [ "$(lab::cluster_state)" = "none" ]; then
+      echo "error: couldn't create a Kubernetes client: no cluster found" >&2
+      echo "       run 'kubeadm init' first" >&2
+      exit 1
+    fi
+    case "$sub" in
+      plan)
+        cat <<'EOF'
+[upgrade/versions] Cluster version: v1.31.2
+[upgrade/versions] kubeadm version: v1.31.2
+
+Components that must be upgraded manually after you have upgraded the control plane:
+COMPONENT   CURRENT   TARGET
+kubelet     v1.31.2   v1.32.0
+
+Upgrade to the latest version:
+
+COMPONENT                 CURRENT   TARGET
+kube-apiserver             v1.31.2   v1.32.0
+kube-controller-manager    v1.31.2   v1.32.0
+kube-scheduler             v1.31.2   v1.32.0
+kube-proxy                 v1.31.2   v1.32.0
+
+_____________________________________________________________
+
+To upgrade to v1.32.0, run:
+  kubeadm upgrade apply v1.32.0
+EOF
+        touch "$LAB_STATE_DIR/upgrade-planned"
+        lab::progress "kubeadm:upgrade-plan" ok "upgrade plan shown"
+        ;;
+      apply)
+        target="${1:-}"
+        if [ ! -f "$LAB_STATE_DIR/upgrade-planned" ]; then
+          echo "error: no upgrade plan found for this cluster" >&2
+          echo "       → run \`kubeadm upgrade plan\` first" >&2
+          echo "[lab] sequence check failed — see checklist panel" >&2
+          exit 1
+        fi
+        if [ -z "$target" ]; then
+          echo "error: missing target version, e.g. 'kubeadm upgrade apply v1.32.0'" >&2
+          exit 1
+        fi
+        echo "[upgrade/apply] Verifying the cluster health"
+        echo "[upgrade/apply] Upgrading your Static Pod-hosted control plane to version \"$target\""
+        echo "[upgrade/apply] SUCCESS! Your cluster was upgraded to \"$target\"."
+        echo
+        echo "Enjoy!"
+        touch "$LAB_STATE_DIR/cluster-upgraded"
+        rm -f "$LAB_STATE_DIR/upgrade-planned"
+        lab::progress "kubeadm:upgrade-apply" ok "control plane upgraded to $target"
+        ;;
+      *)
+        echo "usage: kubeadm upgrade {plan|apply <version>}" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+
+  reset)
+    rm -f "$LAB_STATE_DIR"/cluster-* "$LAB_STATE_DIR"/upgrade-planned
+    echo "[reset] Deleting contents of stateful directories"
+    echo "The node has been reset and is ready for a new 'kubeadm init'."
+    lab::progress "kubeadm:reset" ok "cluster reset"
+    ;;
+
+  *)
+    echo "kubeadm (CKA lab simulator): unrecognized command '$cmd'" >&2
+    echo "supported: init, upgrade plan, upgrade apply <version>, reset, version" >&2
+    exit 1
+    ;;
+esac

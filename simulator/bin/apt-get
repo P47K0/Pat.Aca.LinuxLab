@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# apt-get shim: fakes installing the Kubernetes-specific packages (so the
+# lab doesn't depend on kubeadm actually working in a sandboxed container —
+# see the BRD's §06). Everything else passes straight through to the real
+# apt-get, so installing vim/jq/whatever-you-need still genuinely works.
+set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+
+REAL_APT_GET=/usr/bin/apt-get
+K8S_PKGS="containerd containerd.io kubelet kubeadm kubectl"
+
+is_k8s_pkg() {
+  local p
+  for p in $K8S_PKGS; do [ "$1" = "$p" ] && return 0; done
+  return 1
+}
+
+if [ "${1:-}" = "install" ]; then
+  shift
+  fake=() real=()
+  for arg in "$@"; do
+    case "$arg" in
+      -*) continue ;;
+      *) if is_k8s_pkg "$arg"; then fake+=("$arg"); else real+=("$arg"); fi ;;
+    esac
+  done
+
+  if [ "${#fake[@]}" -gt 0 ]; then
+    echo "Reading package lists... Done"
+    echo "Building dependency tree... Done"
+    echo "Reading state information... Done"
+    echo "The following NEW packages will be installed:"
+    echo "  ${fake[*]}"
+    for p in "${fake[@]}"; do
+      echo "Get: ${p} (lab-simulator)"
+    done
+    echo "Setting up ${fake[*]} ..."
+    for p in "${fake[@]}"; do
+      lab::pkg_mark "$p"
+      lab::progress "install:$p" ok "$p installed (simulated)"
+    done
+  fi
+
+  if [ "${#real[@]}" -gt 0 ]; then
+    exec "$REAL_APT_GET" install -y "${real[@]}"
+  fi
+  exit 0
+fi
+
+exec "$REAL_APT_GET" "$@"

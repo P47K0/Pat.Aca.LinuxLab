@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# kubectl shim: deliberately thin. Only enough to confirm `kubeadm init`
+# "worked" (get nodes/pods, version, cluster-info) — general resource
+# management (apply/edit/describe/...) is an explicit v1 non-goal, see the
+# BRD's §02/§06.
+set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+
+if [ "$(lab::cluster_state)" = "none" ]; then
+  echo "The connection to the server localhost:8080 was refused - did you specify the right host or port?" >&2
+  exit 1
+fi
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  version)
+    echo "Client Version: v1.31.2 (lab simulator)"
+    echo "Server Version: v1.31.2 (lab simulator)"
+    ;;
+  cluster-info)
+    echo "Kubernetes control plane is running at https://127.0.0.1:6443"
+    echo "CoreDNS is running at https://127.0.0.1:6443/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy"
+    ;;
+  get)
+    case "${1:-}" in
+      node|nodes)
+        echo "NAME      STATUS   ROLES           AGE   VERSION"
+        echo "cka-lab   Ready    control-plane   5m    v1.31.2"
+        ;;
+      pod|pods)
+        echo "NAMESPACE     NAME                     READY   STATUS    RESTARTS   AGE"
+        echo "kube-system   coredns-lab-1            1/1     Running   0          5m"
+        echo "kube-system   coredns-lab-2            1/1     Running   0          5m"
+        echo "kube-system   etcd-cka-lab             1/1     Running   0          5m"
+        echo "kube-system   kube-apiserver-cka-lab   1/1     Running   0          5m"
+        ;;
+      *)
+        echo "error: general kubectl resource management isn't part of this lab yet (see the BRD's non-goals)" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  *)
+    echo "error: general kubectl resource management isn't part of this lab yet (see the BRD's non-goals)" >&2
+    exit 1
+    ;;
+esac

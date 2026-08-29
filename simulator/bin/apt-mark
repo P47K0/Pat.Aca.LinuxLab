@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# apt-mark shim: real apt-mark would reject holding packages that were never
+# really installed via dpkg (see the apt-get shim) — this fakes it instead
+# so `apt-mark hold kubelet kubeadm kubectl` reads and works exactly as in
+# the real upgrade procedure.
+set -uo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+
+REAL=/usr/bin/apt-mark
+
+case "${1:-}" in
+  hold)
+    shift
+    for p in "$@"; do
+      lab::hold_mark "$p"
+      echo "$p set on hold."
+      lab::progress "hold:$p" ok "$p held"
+    done
+    ;;
+  unhold)
+    shift
+    for p in "$@"; do
+      rm -f "$LAB_STATE_DIR/hold-$p"
+      echo "Canceled hold on $p."
+    done
+    ;;
+  *)
+    exec "$REAL" "$@"
+    ;;
+esac
