@@ -58,4 +58,13 @@ RUN useradd -m -s /bin/bash labuser
 USER labuser
 WORKDIR /home/labuser
 
-CMD ["bash", "-l"]
+# PID 1 just needs to stay alive — it is NOT the interactive shell. The
+# API's exec connection (Pat.Aca.LinuxLab.Api's ContainerConsoleClient)
+# starts /bin/bash as a *separate* process inside the running container via
+# Azure's exec mechanism (the same way `docker exec`/`kubectl exec` work) —
+# it never attaches to PID 1 directly. `bash -l` as PID 1 was wrong:
+# without a TTY/stdin attached at container start, it hits EOF and exits
+# almost immediately, so the container never stayed up long enough to
+# become "ready" for exec at all (confirmed for real: IsReady stayed false
+# for the full 60s poll window, not just slow to start).
+CMD ["sleep", "infinity"]
