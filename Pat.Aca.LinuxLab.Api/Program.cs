@@ -33,6 +33,13 @@ builder.Services
         // explicitly, and fetch signing keys directly via
         // CloudflareJwksProvider instead of relying on any built-in
         // discovery.
+        // Without this, short JWT claim names (like "email") can get
+        // silently remapped to long legacy XML-namespace claim URIs on the
+        // way in — meaning the token really does carry "email", but
+        // Context.User ends up with it under a completely different claim
+        // type, and FindFirst("email") comes back null despite that.
+        options.MapInboundClaims = false;
+
         var certsUrl = $"{cfAccess.TeamDomain}/cdn-cgi/access/certs";
         var jwksProvider = new CloudflareJwksProvider(new HttpClient());
         options.TokenValidationParameters.ValidIssuer = cfAccess.TeamDomain;
