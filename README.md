@@ -128,8 +128,11 @@ Left as **explicit TODOs**, not silently assumed correct:
    matches the individual-email allow-list this project needs. Instead:
 
    1. **Zero Trust → Access → Applications → Add an application →
-      Self-hosted** → application type **Workers** → select this Worker →
-      scope: production + preview URLs.
+      Self-hosted**. This one application covers both hostnames: use
+      **Add Workers** to select the ui-worker (scope: production + preview
+      URLs), and **Add public hostname** (next to it) for
+      `api.lab.koorevaar.com`, the API's Container App — confirmed this
+      single-app, two-target setup actually works in the current UI.
    2. Under **Access policy**, **Create new policy**: name it (e.g.
       `Owner`), action **Allow**, then under **Include** set the selector
       to **`Emails`** (not "Emails ending in") and add your specific
@@ -137,12 +140,6 @@ Left as **explicit TODOs**, not silently assumed correct:
    3. *Then* the Worker's own **Access** tab → **Protect this Worker** will
       let you pick that already-created policy (`Owner`) instead of being
       limited to the two canned options.
-
-   Still to verify: this app type is scoped to **Workers** specifically, so
-   it may not also cover `api.lab.koorevaar.com` (a Container App, not a
-   Worker) under the same application — check after creating it, and if
-   not, a second Access application (plain "public hostname" type) will be
-   needed for that hostname, same `Owner` policy attached.
 2. **Note the Access app's `TeamDomain` and `Audience`** (Zero Trust →
    Settings → Custom Pages for the team domain; the app's Overview tab for
    its AUD tag) while you're already in that dashboard — steps 6 and 7
