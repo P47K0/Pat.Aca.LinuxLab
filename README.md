@@ -146,8 +146,8 @@ Left as **explicit TODOs**, not silently assumed correct:
    as "Team domain", e.g. `mute-recipe-da12.cloudflareaccess.com` — add
    `https://` when you actually set the config value, since `Program.cs`
    builds a full URL from it). `Audience` is specific to the application
-   you just created in step 1, not account-level — find it on that app's
-   own **Overview** tab (its AUD tag) once it exists.
+   you just created in step 1, not account-level — find it under that
+   app's **Additional settings** tab, labeled **AUD tag**.
 3. **Connect `Cloudflare/ui-worker` via Cloudflare's Git integration**
    (Workers Builds), pointed at this repo with **root directory set to
    `Cloudflare/ui-worker`** — same pattern as `Pat.Aca.BlogServiceApi`'s
