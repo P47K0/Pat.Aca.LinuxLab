@@ -154,10 +154,27 @@ Left as **explicit TODOs**, not silently assumed correct:
    `Cloudflare/ui-worker`** — same pattern as `Pat.Aca.BlogServiceApi`'s
    workers. It builds and deploys itself on push; there's no
    `wrangler deploy` step or GitHub Actions workflow for it in this repo.
-4. **Custom domains**: `lab.koorevaar.com` → this Worker;
-   `api.lab.koorevaar.com` → the API's Container App, both proxied through
-   Cloudflare (needed for Access to gate them, and for the API to read the
-   `Cf-Access-*` headers).
+4. **Custom domains**: `lab.koorevaar.com` → this Worker (handled by the
+   Git integration in step 3); `api.lab.koorevaar.com` → the API's
+   Container App, bound via **ACA → Networking → Custom domains**.
+   For the API's domain specifically:
+   1. Add the domain there; Azure gives you a **TXT** record
+      (`asuid.api.lab` → a verification ID) for ownership validation — add
+      it in Cloudflare DNS as **DNS-only**, proxy status doesn't matter for
+      TXT records either way.
+   2. Add the **CNAME** (`api.lab` → the Container App's default
+      `*.azurecontainerapps.io` hostname) as **DNS-only (grey cloud) at
+      first, not proxied**. Azure's CNAME-target check does its own live
+      DNS lookup — a proxied record resolves to Cloudflare's edge IPs
+      instead of the real target and fails validation even though the
+      record is otherwise correct.
+   3. Once Azure validates and binds the domain (managed certificate
+      included), **switch the CNAME to Proxied (orange cloud)** — that's
+      what actually puts Cloudflare, and Access, in the traffic path.
+
+   Both ending up proxied is what's needed for Access to gate them and for
+   the API to read the `Cf-Access-*` headers — just not during the CNAME's
+   own validation step.
 5. **ACA environment**: reuses the existing Container Apps environment from
    `Pat.Aca.BlogServiceApi` (per the BRD's assumptions) — the API needs its
    managed identity granted rights to create/delete Container Apps in that
