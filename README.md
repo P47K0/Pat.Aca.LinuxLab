@@ -117,6 +117,18 @@ Left as **explicit TODOs**, not silently assumed correct:
    Worker) and the API's hostname (e.g. `api.lab.koorevaar.com`) under one
    Access app, so a single login covers both. Free tier, email allow-list —
    just the owner for now (BRD §07).
+
+   **Don't** set this up from the Worker's own **Access** tab (the
+   "Protect this Worker behind Access" one-click button) — that flow only
+   offers two policy types, "Cloudflare account" (anyone who's a member of
+   your whole Cloudflare account — DNS, billing, everything, not just this
+   app) or "Email domain" (anyone at that domain — on Gmail/Hotmail that's
+   the entire public, not just you). Neither matches the individual-email
+   allow-list this project actually needs, and it can't be pointed at a
+   second hostname (the API) either. Use the full path instead: **Zero
+   Trust → Access → Applications → Add an application → Self-hosted**,
+   which has the real per-email policy selector and covers both hostnames
+   under one app as intended.
 2. **Note the Access app's `TeamDomain` and `Audience`** (Zero Trust →
    Settings → Custom Pages for the team domain; the app's Overview tab for
    its AUD tag) while you're already in that dashboard — steps 6 and 7
