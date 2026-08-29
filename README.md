@@ -111,7 +111,10 @@ Left as **explicit TODOs**, not silently assumed correct:
 4. **GitHub secrets/vars** (`dev` environment, same pattern as
    `Pat.Aca.BlogServiceApi`): secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
    `AZURE_SUBSCRIPTION_ID`, `DOCKERHUB_TOKEN`; vars `DOCKERHUB_USERNAME`,
-   `AZURE_RESOURCE_GROUP`.
+   `AZURE_RESOURCE_GROUP`, `ACA_ENVIRONMENT_NAME`, `CF_ACCESS_TEAM_DOMAIN`,
+   `CF_ACCESS_AUDIENCE`. `API_SELF_URL` is chicken-and-egg (unknown until
+   the first create prints the app's FQDN) — leave it unset for the first
+   `deploy-api.yml` run, then set it and re-run.
 5. **`Pat.Aca.LinuxLab.Api`'s `LabSession` config** (env vars in production,
    `appsettings.Development.json` locally — never committed non-empty):
    `SubscriptionId`, `ResourceGroup`, `ContainerAppsEnvironmentName`,

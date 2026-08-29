@@ -1,14 +1,13 @@
 name: Build & deploy API
 
-# Manual-trigger only, matching Pat.Aca.BlogServiceApi's convention. Needs
-# the Container App to already exist once (first deploy is chicken-and-egg —
-# see that project's notes) before update-or-create settles into a routine.
+# Manual-trigger only, matching Pat.Aca.BlogServiceApi's convention.
 on:
   workflow_dispatch:
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    environment: dev
     permissions:
       id-token: write
       contents: read
@@ -35,11 +34,43 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Update Container App
+      # update-or-create: `az containerapp update` fails outright if the app
+      # doesn't exist yet, which is true on the very first run — so try
+      # update first and fall back to create. LabSession__SelfUrl is left
+      # unset on the very first create (chicken-and-egg: the URL isn't known
+      # until after this creates it) — set it as a var once you have it and
+      # re-run, same pattern as this project's COSMOS_ENDPOINT_URI.
+      - name: Update or create Container App
         uses: azure/CLI@v2
         with:
           inlineScript: |
-            az containerapp update \
-              --name cka-lab-api \
-              --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
-              --image ${{ vars.DOCKERHUB_USERNAME }}/cka-lab-api:latest
+            set -e
+            NAME=cka-lab-api
+            RG=${{ vars.AZURE_RESOURCE_GROUP }}
+            IMAGE=${{ vars.DOCKERHUB_USERNAME }}/cka-lab-api:latest
+
+            if az containerapp show --name "$NAME" --resource-group "$RG" >/dev/null 2>&1; then
+              az containerapp update \
+                --name "$NAME" \
+                --resource-group "$RG" \
+                --image "$IMAGE"
+            else
+              az containerapp create \
+                --name "$NAME" \
+                --resource-group "$RG" \
+                --environment ${{ vars.ACA_ENVIRONMENT_NAME }} \
+                --image "$IMAGE" \
+                --system-assigned \
+                --env-vars \
+                  LabSession__SubscriptionId=${{ secrets.AZURE_SUBSCRIPTION_ID }} \
+                  LabSession__ResourceGroup="$RG" \
+                  LabSession__ContainerAppsEnvironmentName=${{ vars.ACA_ENVIRONMENT_NAME }} \
+                  LabSession__LabImage=${{ vars.DOCKERHUB_USERNAME }}/cka-lab:latest \
+                  LabSession__SelfUrl=${{ vars.API_SELF_URL }} \
+                  CloudflareAccess__TeamDomain=${{ vars.CF_ACCESS_TEAM_DOMAIN }} \
+                  CloudflareAccess__Audience=${{ vars.CF_ACCESS_AUDIENCE }}
+
+              echo "::notice::First create done. Copy this app's principal ID and FQDN, grant it Container Apps rights on $RG, set API_SELF_URL, then re-run."
+              az containerapp show --name "$NAME" --resource-group "$RG" \
+                --query "{principalId: identity.principalId, fqdn: properties.configuration.ingress.fqdn}"
+            fi
