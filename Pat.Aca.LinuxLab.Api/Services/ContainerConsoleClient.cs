@@ -121,6 +121,19 @@ public sealed class ContainerConsoleClient : IContainerConsoleClient
         }
     }
 
+    // Confirmed via az containerapp exec's own source (_ssh_utils.py,
+    // _send_stdin): every stdin message needs this exact 2-byte prefix
+    // before the actual character bytes — a real, undocumented framing
+    // protocol, not just a Text-vs-Binary question. Explains both earlier
+    // symptoms precisely: unprefixed Text frames were silently dropped;
+    // unprefixed Binary frames got far enough to reach Azure's internal
+    // relay/dispatch logic, which then failed trying to parse them
+    // ("failed when sending message to cluster", a real error from a real
+    // live test). A separate prefix, \x00\x04 + JSON {"Width","Height"},
+    // exists for terminal resize — not wired up yet, so the container's
+    // PTY dimensions won't track the browser window size until it is.
+    private static readonly byte[] StdinPrefix = [0x00, 0x00];
+
     public async Task SendAsync(string sessionId, string data)
     {
         var found = _sockets.TryGetValue(sessionId, out var socket);
@@ -135,18 +148,9 @@ public sealed class ContainerConsoleClient : IContainerConsoleClient
                 sessionId, found, socket?.State, socket?.CloseStatus, socket?.CloseStatusDescription);
             return;
         }
-        var bytes = Encoding.UTF8.GetBytes(data);
-        // Binary, not Text: output arrives and renders fine regardless of
-        // frame type (bytes are decoded as UTF-8 either way in
-        // PumpOutputAsync), but keystrokes sent as Text frames were
-        // silently doing nothing — confirmed for real (a working prompt,
-        // zero response to typing). PTY-over-WebSocket protocols
-        // (docker exec, kubectl exec, and similar) commonly expect binary
-        // framing for the raw terminal stream specifically because PTY
-        // input isn't guaranteed valid UTF-8; Azure's own protocol isn't
-        // publicly documented at this level of detail, so this is the
-        // most likely single-variable fix rather than a confirmed spec.
-        await socket.SendAsync(bytes, WebSocketMessageType.Binary, endOfMessage: true, CancellationToken.None);
+
+        var payload = StdinPrefix.Concat(Encoding.UTF8.GetBytes(data)).ToArray();
+        await socket.SendAsync(payload, WebSocketMessageType.Binary, endOfMessage: true, CancellationToken.None);
     }
 
     public async Task DisconnectAsync(string sessionId)
