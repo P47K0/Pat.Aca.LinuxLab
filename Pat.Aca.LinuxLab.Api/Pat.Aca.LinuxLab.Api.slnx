@@ -1,3 +1,7 @@
 <Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="../Cloudflare/ui-worker/src/index.ts" />
+    <File Path="../README.md" />
+  </Folder>
   <Project Path="Pat.Aca.LinuxLab.Api.csproj" />
 </Solution>

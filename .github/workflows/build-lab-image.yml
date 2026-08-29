@@ -3,6 +3,13 @@ name: Build & push lab image
 # Manual-trigger only, matching Pat.Aca.BlogServiceApi's convention — this
 # isn't built on every push, only when the Dockerfile/simulator actually
 # changes and you're ready to roll it out.
+#
+# This job stops at "push to Docker Hub" on purpose — there's no deploy
+# step here because this image is never deployed as a standing Container
+# App. deploy-api.yml wires this exact tag into the API as
+# LabSession__LabImage; the API creates a brand-new, short-lived Container
+# App from it per login (LabSessionManager.StartSessionAsync) and tears it
+# down on logout/idle/the 2-hour cap. See the BRD's §08.
 on:
   workflow_dispatch:
 

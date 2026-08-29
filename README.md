@@ -44,6 +44,7 @@ real binaries unmodified — nothing to add there.
 
 ```
 Dockerfile                     the lab container (Ubuntu 22.04 + real tools + the simulator)
+                                — never deployed as a standing app; see build-lab-image.yml
 simulator/                     the kubeadm/systemctl/apt-get shims baked into the image
 Pat.Aca.LinuxLab.Api/          .NET 10 minimal API + SignalR hub — session lifecycle, terminal relay
 Cloudflare/ui-worker/          the frontend: terminal (xterm.js) + live progress checklist
