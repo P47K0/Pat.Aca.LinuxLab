@@ -25,7 +25,15 @@ jobs:
         with:
           context: ./Pat.Aca.LinuxLab.Api
           push: true
-          tags: ${{ vars.DOCKERHUB_USERNAME }}/cka-lab-api:latest
+          # :latest is tagged too, for convenience browsing Docker Hub, but
+          # the deploy step below uses the SHA tag specifically — a
+          # floating tag makes it genuinely ambiguous whether a redeploy
+          # actually rolled out new content or reused something cached,
+          # which is exactly the "still shows the old version" symptom a
+          # mutable tag invites.
+          tags: |
+            ${{ vars.DOCKERHUB_USERNAME }}/cka-lab-api:latest
+            ${{ vars.DOCKERHUB_USERNAME }}/cka-lab-api:${{ github.sha }}
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -53,7 +61,7 @@ jobs:
             set -e
             NAME=cka-lab-api
             RG=${{ vars.AZURE_RESOURCE_GROUP }}
-            IMAGE=${{ vars.DOCKERHUB_USERNAME }}/cka-lab-api:latest
+            IMAGE=${{ vars.DOCKERHUB_USERNAME }}/cka-lab-api:${{ github.sha }}
             ENV_VARS="LabSession__SubscriptionId=${{ secrets.AZURE_SUBSCRIPTION_ID }} \
               LabSession__ResourceGroup=$RG \
               LabSession__ContainerAppsEnvironmentName=${{ vars.ACA_ENVIRONMENT_NAME }} \
