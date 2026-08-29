@@ -1,0 +1,13 @@
+# Normalize line endings for cross-platform contributors. Shell scripts
+# and the Dockerfile are parsed by Unix tools (bash's shebang mechanism
+# especially) that break outright on CRLF — confirmed for real:
+# `/usr/bin/env: 'bash\r': No such file or directory` once these files
+# picked up CRLF line endings from a Windows checkout/editor at some
+# point (git history shows the corruption was actually committed, not
+# just a local working-tree artifact).
+* text=auto eol=lf
+
+Dockerfile text eol=lf
+simulator/bin/* text eol=lf
+simulator/lib.sh text eol=lf
+*.sh text eol=lf
