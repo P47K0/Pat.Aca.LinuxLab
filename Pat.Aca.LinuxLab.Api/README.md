@@ -47,8 +47,7 @@ Dockerfile                     the lab container (Ubuntu 22.04 + real tools + th
 simulator/                     the kubeadm/systemctl/apt-get shims baked into the image
 Pat.Aca.LinuxLab.Api/          .NET 10 minimal API + SignalR hub — session lifecycle, terminal relay
 Cloudflare/ui-worker/          the frontend: terminal (xterm.js) + live progress checklist
-                                (deployed via Cloudflare's own Git integration — see "Manual setup")
-.github/workflows/             manual (workflow_dispatch) pipelines for the lab image + API only
+.github/workflows/             manual (workflow_dispatch) build/deploy pipelines
 ```
 
 ## What's built vs. what's a documented placeholder
@@ -111,36 +110,30 @@ Left as **explicit TODOs**, not silently assumed correct:
    Worker) and the API's hostname (e.g. `api.lab.koorevaar.com`) under one
    Access app, so a single login covers both. Free tier, email allow-list —
    just the owner for now (BRD §07).
-2. **Note the Access app's `TeamDomain` and `Audience`** (Zero Trust →
-   Settings → Custom Pages for the team domain; the app's Overview tab for
-   its AUD tag) while you're already in that dashboard — steps 6 and 7
-   below both need these two values.
-3. **Connect `Cloudflare/ui-worker` via Cloudflare's Git integration**
-   (Workers Builds), pointed at this repo with **root directory set to
-   `Cloudflare/ui-worker`** — same pattern as `Pat.Aca.BlogServiceApi`'s
-   workers. It builds and deploys itself on push; there's no
-   `wrangler deploy` step or GitHub Actions workflow for it in this repo.
-4. **Custom domains**: `lab.koorevaar.com` → this Worker;
+2. **`CloudflareAccess` config** (same non-empty-locally rule):
+   `TeamDomain` (Zero Trust → Settings → Custom Pages) and `Audience` (the
+   Access application's AUD tag) — needed to verify the JWT.
+3. **Custom domains**: `lab.koorevaar.com` → this Worker;
    `api.lab.koorevaar.com` → the API's Container App, both proxied through
    Cloudflare (needed for Access to gate them, and for the API to read the
    `Cf-Access-*` headers).
-5. **ACA environment**: reuses the existing Container Apps environment from
+4. **ACA environment**: reuses the existing Container Apps environment from
    `Pat.Aca.BlogServiceApi` (per the BRD's assumptions) — the API needs its
    managed identity granted rights to create/delete Container Apps in that
    resource group.
-6. **GitHub secrets/vars** (`dev` environment, same pattern as
+5. **GitHub secrets/vars** (`dev` environment, same pattern as
    `Pat.Aca.BlogServiceApi`): secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
    `AZURE_SUBSCRIPTION_ID`, `DOCKERHUB_TOKEN`; vars `DOCKERHUB_USERNAME`,
    `AZURE_RESOURCE_GROUP`, `ACA_ENVIRONMENT_NAME`, `CF_ACCESS_TEAM_DOMAIN`,
-   `CF_ACCESS_AUDIENCE` (from step 2). `API_SELF_URL` is chicken-and-egg
-   (unknown until the first create prints the app's FQDN) — leave it unset
-   for the first `deploy-api.yml` run, then set it and re-run.
-7. **`Pat.Aca.LinuxLab.Api`'s local config** (`appsettings.Development.json`
-   — never committed non-empty): `LabSession` (`SubscriptionId`,
-   `ResourceGroup`, `ContainerAppsEnvironmentName`, `LabImage`, `SelfUrl`)
-   and `CloudflareAccess` (`TeamDomain`/`Audience` from step 2) — production
-   gets the same values as env vars via `deploy-api.yml` (step 6).
-8. **Restrict the ACA ingress** to Cloudflare's IP ranges (or an equivalent
+   `CF_ACCESS_AUDIENCE`. `API_SELF_URL` is chicken-and-egg (unknown until
+   the first create prints the app's FQDN) — leave it unset for the first
+   `deploy-api.yml` run, then set it and re-run.
+6. **`Pat.Aca.LinuxLab.Api`'s `LabSession` config** (env vars in production,
+   `appsettings.Development.json` locally — never committed non-empty):
+   `SubscriptionId`, `ResourceGroup`, `ContainerAppsEnvironmentName`,
+   `LabImage` (the pushed `cka-lab` image), `SelfUrl` (this API's own
+   reachable URL).
+7. **Restrict the ACA ingress** to Cloudflare's IP ranges (or an equivalent
    network restriction) so the API is only ever reachable through the
    Access-protected hostname, never directly — the JWT check alone doesn't
    stop someone from hitting the raw ACA URL and forging the header
