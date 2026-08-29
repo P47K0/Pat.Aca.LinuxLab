@@ -24,8 +24,17 @@ builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        // MetadataAddress does the real work here (fetches Cloudflare's
+        // JWKS for signature verification). Authority is set too, but
+        // that endpoint isn't a standard OIDC discovery document (it's
+        // JWKS-only, no "issuer" field) — .NET's discovery-document
+        // parsing can't reliably derive ValidIssuer from it, so it's set
+        // explicitly instead of relying on that inference. (Found via a
+        // real "the issuer '...' is invalid" 401 with an otherwise-correct
+        // TeamDomain — Authority alone wasn't enough.)
         options.Authority = cfAccess.TeamDomain;
         options.MetadataAddress = $"{cfAccess.TeamDomain}/cdn-cgi/access/certs";
+        options.TokenValidationParameters.ValidIssuer = cfAccess.TeamDomain;
         options.TokenValidationParameters.ValidAudience = cfAccess.Audience;
         options.Events = new JwtBearerEvents
         {
