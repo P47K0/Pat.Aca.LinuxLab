@@ -30,7 +30,7 @@ public sealed class ContainerConsoleClient : IContainerConsoleClient
             _options.SubscriptionId, _options.ResourceGroup, session.ContainerAppName);
         var app = _arm.GetContainerAppResource(appId);
 
-        var uri = await ResolveExecUriAsync(app, session, ct);
+        var uri = await ResolveExecUriAsync(app, session, onOutput, ct);
 
         // Confirmed via `az containerapp exec`'s own source: the WebSocket does
         // NOT take a normal ARM-scoped bearer token (that's what the earlier
@@ -38,6 +38,7 @@ public sealed class ContainerConsoleClient : IContainerConsoleClient
         // short-lived token from this dedicated operation instead.
         var authToken = (await app.GetAuthTokenAsync(ct)).Value.Token;
 
+        await onOutput("[lab] Connecting to your terminal...\r\n");
         var socket = new ClientWebSocket();
         socket.Options.SetRequestHeader("Authorization", $"Bearer {authToken}");
         await socket.ConnectAsync(uri, ct);
@@ -65,9 +66,10 @@ public sealed class ContainerConsoleClient : IContainerConsoleClient
     /// different, real problem worth its own investigation, so this still
     /// throws rather than silently trying an endpoint that isn't ready.
     /// </summary>
-    private async Task<Uri> ResolveExecUriAsync(ContainerAppResource app, LabSession session, CancellationToken ct)
+    private async Task<Uri> ResolveExecUriAsync(ContainerAppResource app, LabSession session, Func<string, Task> onOutput, CancellationToken ct)
     {
         var deadline = DateTimeOffset.UtcNow + ReadyTimeout;
+        var announcedWaiting = false;
 
         while (true)
         {
@@ -101,6 +103,12 @@ public sealed class ContainerConsoleClient : IContainerConsoleClient
                 _logger.LogInformation(
                     "Container app {ContainerApp} not ready for exec yet (IsReady={IsReady}) — retrying",
                     session.ContainerAppName, container?.IsReady);
+            }
+
+            if (!announcedWaiting)
+            {
+                await onOutput("[lab] Waiting for your container to start...\r\n");
+                announcedWaiting = true; // once only — this can poll for up to a minute, no need to repeat the line
             }
 
             if (DateTimeOffset.UtcNow >= deadline)
@@ -149,7 +157,25 @@ public sealed class ContainerConsoleClient : IContainerConsoleClient
             {
                 var result = await socket.ReceiveAsync(buffer, ct);
                 if (result.MessageType == WebSocketMessageType.Close) break;
-                await onOutput(Encoding.UTF8.GetString(buffer, 0, result.Count));
+
+                var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
+
+                // Azure's own exec relay can send a JSON error payload as
+                // regular message content over an otherwise-successfully-
+                // connected socket — confirmed for real, a
+                // ClusterExecEndpointConnectionError came through exactly
+                // this way rather than failing the WebSocket handshake
+                // itself. Useful to see raw while debugging, but not
+                // something to show a real user: log it, relay a generic
+                // message instead of Azure's internal error shape.
+                if (text.TrimStart().StartsWith("{\"Error\":", StringComparison.Ordinal))
+                {
+                    _logger.LogWarning("Container relay reported an error for session {SessionId}: {Payload}", sessionId, text);
+                    await onOutput("[lab] There was a problem connecting to your lab environment. Please try again.\r\n");
+                    continue;
+                }
+
+                await onOutput(text);
             }
         }
         catch (OperationCanceledException)

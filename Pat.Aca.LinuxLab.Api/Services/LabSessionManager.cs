@@ -48,6 +48,7 @@ public sealed class LabSessionManager : BackgroundService, ILabSessionManager
 
         var containerAppName = BuildContainerAppName(sessionId);
         _logger.LogInformation("Starting lab session {SessionId} for {User} as {ContainerApp}", sessionId, userEmail, containerAppName);
+        await ReportStatusAsync(sessionId, "Creating your lab environment...");
 
         var resourceGroupId = ResourceGroupResource.CreateResourceIdentifier(_options.SubscriptionId, _options.ResourceGroup);
         var resourceGroup = _arm.GetResourceGroupResource(resourceGroupId);
@@ -89,8 +90,16 @@ public sealed class LabSessionManager : BackgroundService, ILabSessionManager
         var session = new LabSession(sessionId, userEmail, containerAppName, DateTimeOffset.UtcNow);
         _sessions[sessionId] = session;
 
+        // ContainerConsoleClient also uses this same delegate for its own
+        // "[lab] ..." status lines (readiness polling, connecting) — safe
+        // to share with raw PTY output since status lines only ever happen
+        // before the exec connection succeeds, never mixed with real bytes.
         await _console.ConnectAsync(session, chunk => _hub.Clients.Client(sessionId).SendAsync("ReceiveOutput", chunk), ct);
     }
+
+    /// <summary>A one-off "[lab] ..." status line, for progress before the container even exists yet — see ContainerConsoleClient for the later stages, which reuse the onOutput delegate directly instead of this (session isn't tracked here at that point).</summary>
+    private Task ReportStatusAsync(string sessionId, string message) =>
+        _hub.Clients.Client(sessionId).SendAsync("ReceiveOutput", $"[lab] {message}\r\n");
 
     public async Task EndSessionAsync(string sessionId)
     {

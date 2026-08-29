@@ -62,13 +62,14 @@ public class LabHub : Hub
         }
         catch (Exception ex)
         {
-            // Anything else (most likely: the real Azure SDK call in
-            // StartSessionAsync — RBAC not yet granted, wrong resource
-            // group/environment name, etc. — none of this has run against
-            // a live subscription before now) would otherwise surface only
-            // as "connects then immediately disconnects" client-side, with
-            // nothing to go on. Log it in full instead of guessing.
+            // Full detail goes to the server log only — an end user gets a
+            // generic message, never the exception text itself (which could
+            // be anything from an Azure resource ID to an internal stack
+            // trace). Logging in full here is still exactly as valuable for
+            // us as it was during initial debugging; this only changes what
+            // reaches the browser.
             _logger.LogError(ex, "StartSessionAsync failed for {User} ({ConnectionId})", email, Context.ConnectionId);
+            await Clients.Caller.SendAsync("SessionRejected", "Something went wrong starting your lab session. Please try again.");
             Context.Abort();
             return;
         }
