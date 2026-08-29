@@ -140,10 +140,14 @@ Left as **explicit TODOs**, not silently assumed correct:
    3. *Then* the Worker's own **Access** tab → **Protect this Worker** will
       let you pick that already-created policy (`Owner`) instead of being
       limited to the two canned options.
-2. **Note the Access app's `TeamDomain` and `Audience`** (Zero Trust →
-   Settings → Custom Pages for the team domain; the app's Overview tab for
-   its AUD tag) while you're already in that dashboard — steps 6 and 7
-   below both need these two values.
+2. **Note the Access app's `TeamDomain` and `Audience`** while you're
+   already in that dashboard — steps 6 and 7 below both need these two
+   values. `TeamDomain` is account-level: Zero Trust → **Settings** (shown
+   as "Team domain", e.g. `mute-recipe-da12.cloudflareaccess.com` — add
+   `https://` when you actually set the config value, since `Program.cs`
+   builds a full URL from it). `Audience` is specific to the application
+   you just created in step 1, not account-level — find it on that app's
+   own **Overview** tab (its AUD tag) once it exists.
 3. **Connect `Cloudflare/ui-worker` via Cloudflare's Git integration**
    (Workers Builds), pointed at this repo with **root directory set to
    `Cloudflare/ui-worker`** — same pattern as `Pat.Aca.BlogServiceApi`'s
