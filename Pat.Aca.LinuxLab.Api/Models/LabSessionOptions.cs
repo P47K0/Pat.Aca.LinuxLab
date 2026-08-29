@@ -25,4 +25,7 @@ public sealed class LabSessionOptions
 
     /// <summary>Caps how many new sessions one user can start per rolling hour — the real cost/abuse guard, since starting a session is what actually spins up billable Azure resources.</summary>
     public int MaxSessionStartsPerHour { get; set; } = 5;
+
+    /// <summary>The frontend's own origin (e.g. "https://lab.koorevaar.com") — needed for CORS, since the browser calls this API's SignalR hub cross-origin (different subdomain).</summary>
+    public string AllowedOrigin { get; set; } = "";
 }

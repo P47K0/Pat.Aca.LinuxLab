@@ -183,7 +183,9 @@ Left as **explicit TODOs**, not silently assumed correct:
    `Pat.Aca.BlogServiceApi`): secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
    `AZURE_SUBSCRIPTION_ID`, `DOCKERHUB_TOKEN`; vars `DOCKERHUB_USERNAME`,
    `AZURE_RESOURCE_GROUP`, `ACA_ENVIRONMENT_NAME`, `CF_ACCESS_TEAM_DOMAIN`,
-   `CF_ACCESS_AUDIENCE` (from step 2). `API_SELF_URL` is chicken-and-egg
+   `CF_ACCESS_AUDIENCE` (from step 2), `LAB_FRONTEND_ORIGIN`
+   (`https://lab.koorevaar.com` — needed for CORS, since the browser calls
+   this API cross-origin from a different subdomain). `API_SELF_URL` is chicken-and-egg
    (unknown until the first create prints the app's FQDN) — leave it unset
    for the first `deploy-api.yml` run, then set it and re-run. Find it as
    **Application Url** on the Container App's Overview page in the portal

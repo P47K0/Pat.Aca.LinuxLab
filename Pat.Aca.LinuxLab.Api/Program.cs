@@ -44,6 +44,23 @@ builder.Services
     });
 builder.Services.AddAuthorization();
 
+// lab.koorevaar.com and api.lab.koorevaar.com are different origins (a
+// subdomain difference still counts) — the browser's SignalR client calls
+// this hub cross-origin (negotiate is a plain fetch), and needs explicit
+// CORS headers. AllowCredentials means the origin can't be "*" — it must
+// be the exact configured origin.
+var labSession = builder.Configuration.GetSection("LabSession").Get<LabSessionOptions>() ?? new();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("LabFrontend", policy =>
+    {
+        policy.WithOrigins(labSession.AllowedOrigin)
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+
 // /internal/progress is only ever called by the simulator shims running
 // inside a session's own container (see simulator/lib.sh's lab::progress),
 // but it's still an unauthenticated endpoint on this API's surface, so it
@@ -73,11 +90,12 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<LabSessionManager>
 
 var app = builder.Build();
 
+app.UseCors("LabFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
 
-app.MapHub<LabHub>("/hubs/lab").RequireAuthorization();
+app.MapHub<LabHub>("/hubs/lab").RequireAuthorization().RequireCors("LabFrontend");
 
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
 

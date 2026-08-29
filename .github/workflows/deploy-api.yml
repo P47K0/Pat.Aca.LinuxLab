@@ -40,6 +40,12 @@ jobs:
       # unset on the very first create (chicken-and-egg: the URL isn't known
       # until after this creates it) — set it as a var once you have it and
       # re-run, same pattern as this project's COSMOS_ENDPOINT_URI.
+      #
+      # Both branches pass the SAME full env-vars list, on purpose: `az
+      # containerapp update --set-env-vars` REPLACES the entire list rather
+      # than merging (same gotcha already hit once in this project's sibling
+      # blog-service-api) — passing only what changed would silently wipe
+      # every other setting on the running app.
       - name: Update or create Container App
         uses: azure/CLI@v2
         with:
@@ -48,12 +54,21 @@ jobs:
             NAME=cka-lab-api
             RG=${{ vars.AZURE_RESOURCE_GROUP }}
             IMAGE=${{ vars.DOCKERHUB_USERNAME }}/cka-lab-api:latest
+            ENV_VARS="LabSession__SubscriptionId=${{ secrets.AZURE_SUBSCRIPTION_ID }} \
+              LabSession__ResourceGroup=$RG \
+              LabSession__ContainerAppsEnvironmentName=${{ vars.ACA_ENVIRONMENT_NAME }} \
+              LabSession__LabImage=${{ vars.DOCKERHUB_USERNAME }}/cka-lab:latest \
+              LabSession__SelfUrl=${{ vars.API_SELF_URL }} \
+              LabSession__AllowedOrigin=${{ vars.LAB_FRONTEND_ORIGIN }} \
+              CloudflareAccess__TeamDomain=${{ vars.CF_ACCESS_TEAM_DOMAIN }} \
+              CloudflareAccess__Audience=${{ vars.CF_ACCESS_AUDIENCE }}"
 
             if az containerapp show --name "$NAME" --resource-group "$RG" >/dev/null 2>&1; then
               az containerapp update \
                 --name "$NAME" \
                 --resource-group "$RG" \
-                --image "$IMAGE"
+                --image "$IMAGE" \
+                --set-env-vars $ENV_VARS
             else
               az containerapp create \
                 --name "$NAME" \
@@ -63,14 +78,7 @@ jobs:
                 --system-assigned \
                 --ingress external \
                 --target-port 8080 \
-                --env-vars \
-                  LabSession__SubscriptionId=${{ secrets.AZURE_SUBSCRIPTION_ID }} \
-                  LabSession__ResourceGroup="$RG" \
-                  LabSession__ContainerAppsEnvironmentName=${{ vars.ACA_ENVIRONMENT_NAME }} \
-                  LabSession__LabImage=${{ vars.DOCKERHUB_USERNAME }}/cka-lab:latest \
-                  LabSession__SelfUrl=${{ vars.API_SELF_URL }} \
-                  CloudflareAccess__TeamDomain=${{ vars.CF_ACCESS_TEAM_DOMAIN }} \
-                  CloudflareAccess__Audience=${{ vars.CF_ACCESS_AUDIENCE }}
+                --env-vars $ENV_VARS
 
               echo "::notice::First create done. Copy this app's principal ID and FQDN, grant it Container Apps rights on $RG, set API_SELF_URL, then re-run."
               az containerapp show --name "$NAME" --resource-group "$RG" \
