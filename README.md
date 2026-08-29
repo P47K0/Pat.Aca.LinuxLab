@@ -118,17 +118,31 @@ Left as **explicit TODOs**, not silently assumed correct:
    Access app, so a single login covers both. Free tier, email allow-list —
    just the owner for now (BRD §07).
 
-   **Don't** set this up from the Worker's own **Access** tab (the
-   "Protect this Worker behind Access" one-click button) — that flow only
-   offers two policy types, "Cloudflare account" (anyone who's a member of
-   your whole Cloudflare account — DNS, billing, everything, not just this
-   app) or "Email domain" (anyone at that domain — on Gmail/Hotmail that's
-   the entire public, not just you). Neither matches the individual-email
-   allow-list this project actually needs, and it can't be pointed at a
-   second hostname (the API) either. Use the full path instead: **Zero
-   Trust → Access → Applications → Add an application → Self-hosted**,
-   which has the real per-email policy selector and covers both hostnames
-   under one app as intended.
+   **Create the policy through the full wizard, not the Worker's Access
+   tab shortcut.** The Worker's own "Protect this Worker behind Access"
+   button is fine to use *last*, once a real policy already exists — but
+   creating the policy directly from that shortcut only offers two canned
+   options ("Cloudflare account" — anyone who's a member of your whole
+   Cloudflare account, not just this app — or "Email domain" — anyone at
+   that domain, which on Gmail/Hotmail is the entire public). Neither
+   matches the individual-email allow-list this project needs. Instead:
+
+   1. **Zero Trust → Access → Applications → Add an application →
+      Self-hosted** → application type **Workers** → select this Worker →
+      scope: production + preview URLs.
+   2. Under **Access policy**, **Create new policy**: name it (e.g.
+      `Owner`), action **Allow**, then under **Include** set the selector
+      to **`Emails`** (not "Emails ending in") and add your specific
+      address — not a domain. Save the policy, then save the application.
+   3. *Then* the Worker's own **Access** tab → **Protect this Worker** will
+      let you pick that already-created policy (`Owner`) instead of being
+      limited to the two canned options.
+
+   Still to verify: this app type is scoped to **Workers** specifically, so
+   it may not also cover `api.lab.koorevaar.com` (a Container App, not a
+   Worker) under the same application — check after creating it, and if
+   not, a second Access application (plain "public hostname" type) will be
+   needed for that hostname, same `Owner` policy attached.
 2. **Note the Access app's `TeamDomain` and `Audience`** (Zero Trust →
    Settings → Custom Pages for the team domain; the app's Overview tab for
    its AUD tag) while you're already in that dashboard — steps 6 and 7
