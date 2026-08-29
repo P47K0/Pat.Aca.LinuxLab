@@ -25,6 +25,9 @@ public sealed class LabSessionManager : BackgroundService, ILabSessionManager
     private readonly ILogger<LabSessionManager> _logger;
     private readonly ConcurrentDictionary<string, LabSession> _sessions = new();
 
+    /// <summary>Session-start timestamps per user, for the per-hour rate guard — see EnforceStartRate.</summary>
+    private readonly ConcurrentDictionary<string, ConcurrentQueue<DateTimeOffset>> _recentStarts = new();
+
     public LabSessionManager(
         ArmClient arm,
         IContainerConsoleClient console,
@@ -41,6 +44,8 @@ public sealed class LabSessionManager : BackgroundService, ILabSessionManager
 
     public async Task StartSessionAsync(string sessionId, string userEmail, CancellationToken ct)
     {
+        EnforceStartRate(userEmail);
+
         var containerAppName = $"lab-{sessionId[..Math.Min(8, sessionId.Length)].ToLowerInvariant()}";
         _logger.LogInformation("Starting lab session {SessionId} for {User} as {ContainerApp}", sessionId, userEmail, containerAppName);
 
@@ -123,13 +128,26 @@ public sealed class LabSessionManager : BackgroundService, ILabSessionManager
         var sweepInterval = TimeSpan.FromMinutes(1);
         while (!stoppingToken.IsCancellationRequested)
         {
-            var idleCutoff = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(_options.IdleTimeoutMinutes);
+            var now = DateTimeOffset.UtcNow;
+            var idleCutoff = now - TimeSpan.FromMinutes(_options.IdleTimeoutMinutes);
+            var maxAgeCutoff = now - TimeSpan.FromMinutes(_options.MaxSessionMinutes);
+
             foreach (var session in _sessions.Values)
             {
                 if (session.LastActivityAt < idleCutoff)
                 {
                     _logger.LogInformation(
                         "Session {SessionId} idle past {Minutes}m — tearing down", session.SessionId, _options.IdleTimeoutMinutes);
+                    await EndSessionAsync(session.SessionId);
+                }
+                else if (session.CreatedAt < maxAgeCutoff)
+                {
+                    // Deliberately matches the real CKA exam's own 2-hour limit —
+                    // hitting this is itself part of the practice, not just a cost guard.
+                    _logger.LogInformation(
+                        "Session {SessionId} hit the {Minutes}m hard cap — tearing down", session.SessionId, _options.MaxSessionMinutes);
+                    await _hub.Clients.Client(session.SessionId).SendAsync(
+                        "SessionEnded", "Time's up — matches the real exam's time limit. Log back in for a fresh attempt.", stoppingToken);
                     await EndSessionAsync(session.SessionId);
                 }
             }
@@ -143,5 +161,25 @@ public sealed class LabSessionManager : BackgroundService, ILabSessionManager
                 // shutting down — expected
             }
         }
+    }
+
+    /// <summary>Rejects a session start once a user has started too many in the last rolling hour — the real cost/abuse guard, since this is what actually creates a billable Container App.</summary>
+    private void EnforceStartRate(string userEmail)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var windowStart = now - TimeSpan.FromHours(1);
+        var recent = _recentStarts.GetOrAdd(userEmail, _ => new ConcurrentQueue<DateTimeOffset>());
+
+        while (recent.TryPeek(out var oldest) && oldest < windowStart)
+        {
+            recent.TryDequeue(out _);
+        }
+
+        if (recent.Count >= _options.MaxSessionStartsPerHour)
+        {
+            throw new SessionRateLimitExceededException(userEmail, _options.MaxSessionStartsPerHour);
+        }
+
+        recent.Enqueue(now);
     }
 }

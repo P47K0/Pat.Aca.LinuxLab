@@ -19,4 +19,10 @@ public sealed class LabSessionOptions
     public string SelfUrl { get; set; } = "";
 
     public int IdleTimeoutMinutes { get; set; } = 30;
+
+    /// <summary>Hard ceiling regardless of activity — deliberately matches the real CKA exam's own time limit, so hitting it is itself part of the practice.</summary>
+    public int MaxSessionMinutes { get; set; } = 120;
+
+    /// <summary>Caps how many new sessions one user can start per rolling hour — the real cost/abuse guard, since starting a session is what actually spins up billable Azure resources.</summary>
+    public int MaxSessionStartsPerHour { get; set; } = 5;
 }

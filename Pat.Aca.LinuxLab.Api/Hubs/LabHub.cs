@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Pat.Aca.LinuxLab.Api.Services;
 
@@ -9,7 +10,16 @@ namespace Pat.Aca.LinuxLab.Api.Hubs;
 /// into the container as LAB_SESSION_ID for the simulator's progress
 /// callbacks, and what /internal/progress targets to push checklist updates
 /// back to exactly this browser tab.
+///
+/// [Authorize] here means the connection must carry a Cf-Access-Jwt-Assertion
+/// that verifies against Cloudflare's own JWKS (wired up in Program.cs) — not
+/// just present the header, which is what the earlier version of this file
+/// did and was flagged as a TODO. There is deliberately no separate API key:
+/// the browser talks to this hub directly (not proxied through the Worker),
+/// so a Worker-held secret couldn't reach this connection anyway — Cloudflare
+/// Access's own signed identity is the boundary instead.
 /// </summary>
+[Authorize]
 public class LabHub : Hub
 {
     private readonly ILabSessionManager _sessions;
@@ -23,19 +33,29 @@ public class LabHub : Hub
 
     public override async Task OnConnectedAsync()
     {
-        // Cloudflare Access sets this header on requests it has authenticated —
-        // trustworthy only as long as this API is reachable exclusively through
-        // the Access-protected hostname (not directly). TODO: restrict inbound
-        // access at the ACA ingress level (e.g. to Cloudflare's IP ranges)
-        // before this goes further than local testing — see the README.
-        var email = Context.GetHttpContext()?.Request.Headers["Cf-Access-Authenticated-User-Email"].ToString();
+        var email = Context.User?.FindFirst("email")?.Value;
         if (string.IsNullOrWhiteSpace(email))
         {
-            _logger.LogWarning("SignalR connection {ConnectionId} has no Cloudflare Access identity header", Context.ConnectionId);
-            email = "unknown@lab";
+            // Shouldn't happen once [Authorize] has already accepted the
+            // token — but Access's claim name is asserted, not verified from
+            // here, so fail closed rather than fall back to a fake identity.
+            _logger.LogWarning("Authorized connection {ConnectionId} has no 'email' claim", Context.ConnectionId);
+            Context.Abort();
+            return;
         }
 
-        await _sessions.StartSessionAsync(Context.ConnectionId, email, Context.ConnectionAborted);
+        try
+        {
+            await _sessions.StartSessionAsync(Context.ConnectionId, email, Context.ConnectionAborted);
+        }
+        catch (SessionRateLimitExceededException ex)
+        {
+            _logger.LogWarning(ex, "Rejected session start for {User}", email);
+            await Clients.Caller.SendAsync("SessionRejected", ex.Message);
+            Context.Abort();
+            return;
+        }
+
         await base.OnConnectedAsync();
     }
 

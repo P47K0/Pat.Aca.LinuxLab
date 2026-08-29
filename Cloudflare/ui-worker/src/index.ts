@@ -144,6 +144,16 @@ function renderPage(hubUrl: string): string {
       li.querySelector(".label").textContent = evt.message || evt.step;
     });
 
+    connection.on("SessionEnded", (message) => {
+      statusEl.textContent = "session ended";
+      term.writeln("\\r\\n[lab] " + message);
+    });
+
+    connection.on("SessionRejected", (message) => {
+      statusEl.textContent = "rejected";
+      term.writeln("\\r\\n[lab] " + message);
+    });
+
     term.onData((data) => {
       if (connection.state === signalR.HubConnectionState.Connected) {
         connection.invoke("SendInput", data).catch(console.error);

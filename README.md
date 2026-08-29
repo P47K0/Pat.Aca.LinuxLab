@@ -55,14 +55,44 @@ Left as **explicit TODOs**, not silently assumed correct:
   the documented shape of the API `az containerapp exec` uses, but hasn't
   been run against a real subscription — verify it against Microsoft's
   current REST reference before relying on it.
-- `LabHub`'s Cloudflare Access identity check trusts the
-  `Cf-Access-Authenticated-User-Email` header as-is. That's only safe once
-  this API is reachable *exclusively* through the Access-protected hostname
-  (e.g. by restricting the ACA ingress to Cloudflare's IP ranges) — not yet
-  done.
+- The Cloudflare Access identity check now cryptographically verifies
+  `Cf-Access-Jwt-Assertion` against Cloudflare's JWKS (`JwtBearer`, wired up
+  in `Program.cs`) instead of trusting the header as plain text — but that's
+  only a full guarantee once the ACA ingress is also restricted to
+  Cloudflare's IP ranges, so the origin can't be reached directly at all.
+  Not yet done (see "Manual setup" below).
 - No Dockerfile has been built with an actual Docker daemon here (none was
   available in this environment) — the shim logic was verified standalone
   instead. Worth a real `docker build` before first deploy.
+
+## Security & abuse limits
+
+- **No separate API key.** The browser talks to the API's SignalR hub
+  directly (not proxied through the Worker), so a Worker-held secret has no
+  connection to attach itself to. The boundary is Cloudflare Access's own
+  signed JWT instead, verified server-side (see above) — arguably stronger
+  than a static shared secret, since it's short-lived and tied to Access's
+  own session rather than valid forever until manually rotated.
+- **Session-start rate limit**: max 5 new sessions per user per rolling
+  hour (`LabSessionOptions.MaxSessionStartsPerHour`) — this is the real
+  cost/abuse guard, since starting a session is what spins up a billable
+  Container App. `/internal/progress` also has a light fixed-window limit
+  (60/min) as basic hygiene.
+- **2-hour hard session cap** (`LabSessionOptions.MaxSessionMinutes`),
+  separate from the 30-minute idle timeout — deliberately matches the real
+  CKA exam's own time limit, so hitting it is itself part of the practice,
+  not just a cost control.
+- **Captcha on login**: considered and skipped for v1. Cloudflare Access's
+  own policy rules (Email, Country, Device posture, IdP groups, ...) don't
+  include a native Turnstile/CAPTCHA option, and login is already gated by
+  possessing a specific invited email inbox (OTP) for a handful of trusted
+  people — low value for the added complexity. If ever needed (e.g. the
+  invite list grows), Turnstile can be layered in front of the Access login
+  path via a zone-level WAF "Managed Challenge" rule (free plan), no app
+  changes required.
+- **Not yet built**: per-keystroke flood throttling on `SendInput` itself.
+  Low real risk at this scale (a handful of trusted users), but worth
+  revisiting if that changes.
 
 ## Manual setup (not code — done once, by hand)
 
@@ -87,6 +117,14 @@ Left as **explicit TODOs**, not silently assumed correct:
    `SubscriptionId`, `ResourceGroup`, `ContainerAppsEnvironmentName`,
    `LabImage` (the pushed `cka-lab` image), `SelfUrl` (this API's own
    reachable URL).
+6. **`CloudflareAccess` config** (same non-empty-locally rule):
+   `TeamDomain` (Zero Trust → Settings → Custom Pages) and `Audience` (the
+   Access application's AUD tag) — needed to verify the JWT.
+7. **Restrict the ACA ingress** to Cloudflare's IP ranges (or an equivalent
+   network restriction) so the API is only ever reachable through the
+   Access-protected hostname, never directly — the JWT check alone doesn't
+   stop someone from hitting the raw ACA URL and forging the header
+   themselves.
 
 ## Local development
 
