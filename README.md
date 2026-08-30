@@ -103,6 +103,12 @@ Left as **explicit TODOs**, not silently assumed correct:
   `labuser`. Fix, if confirmed broken, is the same one already applied to
   `/etc/kubernetes` — pre-`chown` the directories `apt`/`dpkg` need to
   `labuser` at image build time.
+- The in-page **Feedback** button (`Cloudflare/ui-worker/src/index.ts`)
+  posts to the Worker's own `/feedback` route, which forwards server-side
+  to `CONTACT_API_URL` — left empty in `wrangler.toml` until the real
+  contact API's URL and expected message shape are confirmed.
+  `buildContactPayload()` is the one place to change once they are; right
+  now it sends a placeholder `{name, email, message, source: "cka-lab"}`.
 
 ## Security & abuse limits
 

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 
 type Bindings = {
   LAB_HUB_URL: string;
+  CONTACT_API_URL: string;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -10,7 +11,48 @@ app.get("/", (c) => c.html(renderPage(c.env.LAB_HUB_URL)));
 
 app.get("/healthz", (c) => c.json({ status: "ok" }));
 
+// Server-side proxy for the feedback form — the browser posts here
+// (same-origin, no CORS to configure anywhere), and this forwards to the
+// real contact API from Cloudflare's edge instead of the browser calling
+// it directly. Payload shape below is a placeholder until the real format
+// is confirmed — change buildContactPayload() only, nothing else in this
+// route needs to know about that shape.
+app.post("/feedback", async (c) => {
+  if (!c.env.CONTACT_API_URL) {
+    // Fails loud, not silently — same "never pretend an unconfigured
+    // value is fine" rule the API side of this project already follows.
+    return c.json({ ok: false, error: "Feedback isn't configured yet." }, 503);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const email = typeof body?.email === "string" ? body.email.trim() : "";
+  const message = typeof body?.message === "string" ? body.message.trim() : "";
+
+  if (!name || !email || !message) {
+    return c.json({ ok: false, error: "Name, email, and message are all required." }, 400);
+  }
+
+  const upstream = await fetch(c.env.CONTACT_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(buildContactPayload(name, email, message)),
+  });
+
+  if (!upstream.ok) {
+    return c.json({ ok: false, error: "The contact API rejected the message." }, 502);
+  }
+
+  return c.json({ ok: true });
+});
+
 export default app;
+
+// TODO: placeholder shape — replace once the real contact API's expected
+// message format is known. Keep the change contained to this function.
+function buildContactPayload(name: string, email: string, message: string) {
+  return { name, email, message, source: "cka-lab" };
+}
 
 // One page: a terminal (xterm.js) wired to the API's SignalR hub, plus a
 // checklist panel that lights up as the install/upgrade simulator reports
@@ -70,6 +112,69 @@ function renderPage(hubUrl: string): string {
      next to the other two. */
   header .brand { flex-shrink: 999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #status { font-family: monospace; font-size: 0.8rem; color: var(--ink-soft); flex-shrink: 0; }
+  #feedback-open {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid var(--line);
+    color: var(--ink-soft);
+    border-radius: 4px;
+    padding: 0.3rem 0.6rem;
+    font-family: inherit;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+  #feedback-open:hover { color: var(--ink); border-color: var(--accent); }
+
+  /* Popup, not a new page — stays on top of the terminal, never navigates
+     away from the running session (the whole point of the request). */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    z-index: 10;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 1.2rem;
+    width: 100%;
+    max-width: 26rem;
+  }
+  .modal h2 { margin: 0 0 0.9rem; font-size: 1rem; }
+  .modal label { display: block; font-size: 0.82rem; color: var(--ink-soft); margin: 0.7rem 0 0.3rem; }
+  .modal input, .modal textarea {
+    width: 100%;
+    background: var(--ground);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    border-radius: 4px;
+    padding: 0.5rem 0.6rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+  }
+  .modal textarea { resize: vertical; min-height: 5rem; }
+  .modal input:focus, .modal textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 1rem; }
+  .modal-actions button {
+    font-family: inherit;
+    font-size: 0.85rem;
+    padding: 0.45rem 0.9rem;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  #feedback-cancel { background: none; border: 1px solid var(--line); color: var(--ink-soft); }
+  #feedback-cancel:hover { color: var(--ink); }
+  #feedback-submit { background: var(--accent); border: 1px solid var(--accent); color: var(--ground); font-weight: 600; }
+  #feedback-submit:disabled { opacity: 0.6; cursor: default; }
+  #feedback-status { font-size: 0.82rem; margin-top: 0.6rem; min-height: 1.1em; }
+  #feedback-status.error { color: #e08a8a; }
+  #feedback-status.ok { color: var(--ok); }
   main {
     flex: 1;
     display: flex;
@@ -122,8 +227,9 @@ function renderPage(hubUrl: string): string {
       border-left: none;
       border-top: 1px solid var(--line);
     }
-    header { padding: 0.6rem 0.8rem; }
+    header { padding: 0.6rem 0.8rem; gap: 0.4rem; }
     header span:not(.brand) { font-size: 0.75rem; }
+    #feedback-open { font-size: 0.75rem; padding: 0.25rem 0.5rem; }
   }
 </style>
 </head>
@@ -131,6 +237,7 @@ function renderPage(hubUrl: string): string {
   <header>
     <a href="https://www.koorevaar.com">koorevaar.com</a>
     <span class="brand">CKA Practice Lab</span>
+    <button id="feedback-open" type="button">Feedback</button>
     <span id="status">connecting…</span>
   </header>
   <main>
@@ -140,6 +247,23 @@ function renderPage(hubUrl: string): string {
       <ul id="checklist"><li class="empty">Nothing run yet.</li></ul>
     </aside>
   </main>
+
+  <div class="modal-overlay" id="feedback-overlay">
+    <form class="modal" id="feedback-form">
+      <h2>Send feedback</h2>
+      <label for="feedback-name">Name</label>
+      <input id="feedback-name" name="name" type="text" required>
+      <label for="feedback-email">Email</label>
+      <input id="feedback-email" name="email" type="email" required>
+      <label for="feedback-message">Message</label>
+      <textarea id="feedback-message" name="message" required></textarea>
+      <div id="feedback-status" role="status"></div>
+      <div class="modal-actions">
+        <button id="feedback-cancel" type="button">Cancel</button>
+        <button id="feedback-submit" type="submit">Send</button>
+      </div>
+    </form>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
@@ -242,6 +366,59 @@ function renderPage(hubUrl: string): string {
     connection.onreconnecting(() => (statusEl.textContent = "reconnecting…"));
     connection.onreconnected(() => { statusEl.textContent = "connected"; sendResize(); });
     connection.onclose(() => (statusEl.textContent = "disconnected"));
+
+    // Feedback popup — stays on this same page/tab and this same running
+    // session the whole time; the terminal and its SignalR connection are
+    // untouched by any of this.
+    const feedbackOverlay = document.getElementById("feedback-overlay");
+    const feedbackForm = document.getElementById("feedback-form");
+    const feedbackStatus = document.getElementById("feedback-status");
+    const feedbackSubmit = document.getElementById("feedback-submit");
+
+    const openFeedback = () => {
+      feedbackStatus.textContent = "";
+      feedbackStatus.className = "";
+      feedbackOverlay.classList.add("open");
+      document.getElementById("feedback-name").focus();
+    };
+    const closeFeedback = () => feedbackOverlay.classList.remove("open");
+
+    document.getElementById("feedback-open").addEventListener("click", openFeedback);
+    document.getElementById("feedback-cancel").addEventListener("click", closeFeedback);
+    feedbackOverlay.addEventListener("click", (e) => { if (e.target === feedbackOverlay) closeFeedback(); });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && feedbackOverlay.classList.contains("open")) closeFeedback();
+    });
+
+    feedbackForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      feedbackSubmit.disabled = true;
+      feedbackStatus.className = "";
+      feedbackStatus.textContent = "Sending…";
+
+      try {
+        const res = await fetch("/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: document.getElementById("feedback-name").value,
+            email: document.getElementById("feedback-email").value,
+            message: document.getElementById("feedback-message").value,
+          }),
+        });
+        const result = await res.json();
+        if (!res.ok || !result.ok) throw new Error(result.error || "Something went wrong.");
+
+        feedbackStatus.className = "ok";
+        feedbackStatus.textContent = "Thanks — sent!";
+        setTimeout(() => { closeFeedback(); feedbackForm.reset(); }, 1200);
+      } catch (err) {
+        feedbackStatus.className = "error";
+        feedbackStatus.textContent = err.message || "Something went wrong. Please try again.";
+      } finally {
+        feedbackSubmit.disabled = false;
+      }
+    });
   </script>
 </body>
 </html>`;

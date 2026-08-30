@@ -14,5 +14,12 @@ routes = [
 # also cover this hostname — see the README.
 LAB_HUB_URL = "https://api.lab.koorevaar.com/hubs/lab"
 
+# The feedback form's POST target — this project's own /feedback route
+# forwards to it server-side. Left empty on purpose (same "fail loud, not
+# silently" rule as everything else in this project) until the real
+# contact API's URL and expected message format are confirmed — see
+# buildContactPayload() in src/index.ts.
+CONTACT_API_URL = ""
+
 [observability]
 enabled = true
