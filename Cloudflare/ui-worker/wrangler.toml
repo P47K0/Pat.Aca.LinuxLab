@@ -39,7 +39,7 @@ binding = "CF_VERSION_METADATA"
 # build-counter code below falls back to hiding it, not erroring.
 [[kv_namespaces]]
 binding = "VERSION_KV"
-id = "REPLACE_WITH_REAL_KV_NAMESPACE_ID"
+id = "92ff1099563c4d25ae87e7a8747a9d74"
 
 [observability]
 enabled = true
