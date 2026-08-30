@@ -152,6 +152,15 @@ Left as **explicit TODOs**, not silently assumed correct:
 - **Not yet built**: per-keystroke flood throttling on `SendInput` itself.
   Low real risk at this scale (a handful of trusted users), but worth
   revisiting if that changes.
+- **Network isolation between sessions, and restriction of the lab
+  container's outbound internet access, are not yet implemented.** This is
+  invite-only, to people the owner actually knows and trusts — that's a
+  deliberate scope decision, not a claim that the network layer is locked
+  down. Hardening this properly (session isolation, restricted egress) is
+  tracked as a possible future project, not started; see `BACKLOG.md`. If
+  the invite list ever grows to people the owner doesn't personally know
+  and vouch for, this should be treated as blocking, not optional, before
+  that happens.
 
 ## Manual setup (not code — done once, by hand)
 
