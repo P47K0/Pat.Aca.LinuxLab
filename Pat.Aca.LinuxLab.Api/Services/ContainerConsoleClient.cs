@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
+using System.Text.Json;
 using Azure.ResourceManager;
 using Azure.ResourceManager.AppContainers;
 using Microsoft.Extensions.Options;
@@ -129,28 +130,52 @@ public sealed class ContainerConsoleClient : IContainerConsoleClient
     // unprefixed Binary frames got far enough to reach Azure's internal
     // relay/dispatch logic, which then failed trying to parse them
     // ("failed when sending message to cluster", a real error from a real
-    // live test). A separate prefix, \x00\x04 + JSON {"Width","Height"},
-    // exists for terminal resize — not wired up yet, so the container's
-    // PTY dimensions won't track the browser window size until it is.
+    // live test). The sibling resize prefix (below) is now wired up too.
     private static readonly byte[] StdinPrefix = [0x00, 0x00];
+
+    // Same source as StdinPrefix, the sibling frame for terminal resize:
+    // \x00\x04 followed by JSON {"Width":cols,"Height":rows}. Without this,
+    // the container's PTY stays at whatever size it was when exec first
+    // attached (effectively a fixed default), while the browser's terminal
+    // visually renders at the real container size — on a phone, dramatically
+    // narrower. The PTY's own line-wrapping/redraw (readline's prompt
+    // repaint, vim, less, ...) then computes cursor positions for the wrong
+    // width, which is what actually produces "text on top of other text":
+    // not a CSS bug, a real terminal-size mismatch.
+    private static readonly byte[] ResizePrefix = [0x00, 0x04];
 
     public async Task SendAsync(string sessionId, string data)
     {
-        var found = _sockets.TryGetValue(sessionId, out var socket);
-        if (!found || socket!.State != WebSocketState.Open)
-        {
-            // Was a fully silent no-op before — meaning input could be lost
-            // here with zero trace anywhere. Log it: either the socket was
-            // never stored for this session, or it's in some state other
-            // than Open by the time typing actually happens.
-            _logger.LogWarning(
-                "SendAsync: no open socket for session {SessionId} (found={Found}, state={State}, closeStatus={CloseStatus}, closeDescription={CloseDescription})",
-                sessionId, found, socket?.State, socket?.CloseStatus, socket?.CloseStatusDescription);
-            return;
-        }
+        var socket = GetOpenSocketOrLog(sessionId, nameof(SendAsync));
+        if (socket is null) return;
 
         var payload = StdinPrefix.Concat(Encoding.UTF8.GetBytes(data)).ToArray();
         await socket.SendAsync(payload, WebSocketMessageType.Binary, endOfMessage: true, CancellationToken.None);
+    }
+
+    public async Task ResizeAsync(string sessionId, int cols, int rows)
+    {
+        var socket = GetOpenSocketOrLog(sessionId, nameof(ResizeAsync));
+        if (socket is null) return;
+
+        var json = JsonSerializer.Serialize(new { Width = cols, Height = rows });
+        var payload = ResizePrefix.Concat(Encoding.UTF8.GetBytes(json)).ToArray();
+        await socket.SendAsync(payload, WebSocketMessageType.Binary, endOfMessage: true, CancellationToken.None);
+    }
+
+    private ClientWebSocket? GetOpenSocketOrLog(string sessionId, string caller)
+    {
+        var found = _sockets.TryGetValue(sessionId, out var socket);
+        if (found && socket!.State == WebSocketState.Open) return socket;
+
+        // Was a fully silent no-op before — meaning input (or a resize)
+        // could be lost here with zero trace anywhere. Log it: either the
+        // socket was never stored for this session, or it's in some state
+        // other than Open by the time this got called.
+        _logger.LogWarning(
+            "{Caller}: no open socket for session {SessionId} (found={Found}, state={State}, closeStatus={CloseStatus}, closeDescription={CloseDescription})",
+            caller, sessionId, found, socket?.State, socket?.CloseStatus, socket?.CloseStatusDescription);
+        return null;
     }
 
     public async Task DisconnectAsync(string sessionId)

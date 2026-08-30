@@ -37,12 +37,19 @@ function renderPage(hubUrl: string): string {
     --pending: #4b5860;
   }
   * { box-sizing: border-box; }
+  html, body { overflow: hidden; } /* the terminal and aside scroll internally — the page itself never should */
   body {
     margin: 0;
     background: var(--ground);
     color: var(--ink);
     font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+    /* 100vh doesn't track mobile browsers' address bar show/hide, so the
+       page can end up taller than what's actually visible — 100dvh does.
+       Kept as two declarations, not one: browsers that don't understand
+       dvh discard that whole line and silently keep the 100vh above,
+       rather than erroring. */
     height: 100vh;
+    height: 100dvh;
     display: flex;
     flex-direction: column;
   }
@@ -50,19 +57,25 @@ function renderPage(hubUrl: string): string {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 0.6rem;
     padding: 0.7rem 1.2rem;
     border-bottom: 1px solid var(--line);
     flex-shrink: 0;
   }
-  header a { color: var(--ink); text-decoration: none; font-weight: 600; }
+  header a { color: var(--ink); text-decoration: none; font-weight: 600; flex-shrink: 0; }
   header a:hover { color: var(--accent); }
-  #status { font-family: monospace; font-size: 0.8rem; color: var(--ink-soft); }
+  /* The middle "CKA Practice Lab" label is the first to go on a narrow
+     screen — it's already the page <title>, purely decorative here, and
+     was the piece most likely to get squeezed onto its own cramped line
+     next to the other two. */
+  header .brand { flex-shrink: 999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #status { font-family: monospace; font-size: 0.8rem; color: var(--ink-soft); flex-shrink: 0; }
   main {
     flex: 1;
     display: flex;
     min-height: 0;
   }
-  #term-wrap { flex: 1; padding: 0.8rem; min-width: 0; }
+  #term-wrap { flex: 1; padding: 0.8rem; min-width: 0; min-height: 0; }
   #terminal { height: 100%; }
   aside {
     width: 300px;
@@ -93,12 +106,31 @@ function renderPage(hubUrl: string): string {
   }
   #checklist li.ok .dot { background: var(--ok); }
   #checklist .empty { color: var(--ink-soft); font-size: 0.85rem; }
+
+  /* Below this, there isn't room for the terminal and the 300px sidebar
+     side by side without squeezing the terminal to near-uselessness (the
+     original bug report) — stack instead, terminal first since it's what
+     you're actually there to use, checklist below in its own scrollable
+     strip rather than pushing the terminal off-screen. */
+  @media (max-width: 760px) {
+    main { flex-direction: column; }
+    #term-wrap { flex: 1 1 auto; min-height: 45%; padding: 0.6rem; }
+    aside {
+      width: auto;
+      flex: 0 0 auto;
+      max-height: 35vh;
+      border-left: none;
+      border-top: 1px solid var(--line);
+    }
+    header { padding: 0.6rem 0.8rem; }
+    header span:not(.brand) { font-size: 0.75rem; }
+  }
 </style>
 </head>
 <body>
   <header>
     <a href="https://www.koorevaar.com">koorevaar.com</a>
-    <span>CKA Practice Lab</span>
+    <span class="brand">CKA Practice Lab</span>
     <span id="status">connecting…</span>
   </header>
   <main>
@@ -110,6 +142,7 @@ function renderPage(hubUrl: string): string {
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.0/dist/browser/signalr.min.js"></script>
   <script>
     const term = new Terminal({
@@ -118,7 +151,33 @@ function renderPage(hubUrl: string): string {
       fontSize: 14,
       theme: { background: "#0d1216", foreground: "#e7ecef" },
     });
+    // Without this, the terminal keeps whatever cols/rows it had when it
+    // was first opened — on a phone, the visible box is far narrower than
+    // that, so the remote shell (which never hears about the mismatch
+    // either, see onResize below) wraps and redraws lines assuming a width
+    // that isn't real, which is what actually produces "text on top of
+    // other text": a real terminal-size mismatch, not a CSS bug.
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
     term.open(document.getElementById("terminal"));
+    fitAddon.fit();
+
+    // Re-fit on any real size change to the terminal's own container —
+    // not just window resize, since that alone misses some of the cases
+    // that matter most on mobile (address bar show/hide, the on-screen
+    // keyboard opening, the checklist panel's layout flipping at the
+    // 760px breakpoint above) without necessarily firing a window resize
+    // event at all.
+    let fitScheduled = false;
+    const scheduleFit = () => {
+      if (fitScheduled) return;
+      fitScheduled = true;
+      requestAnimationFrame(() => {
+        fitScheduled = false;
+        fitAddon.fit();
+      });
+    };
+    new ResizeObserver(scheduleFit).observe(document.getElementById("term-wrap"));
 
     const statusEl = document.getElementById("status");
     const checklistEl = document.getElementById("checklist");
@@ -160,16 +219,28 @@ function renderPage(hubUrl: string): string {
       }
     });
 
+    // Tells the container's real PTY the terminal's real size (see the
+    // fitAddon comment above) — fires on every fit(), including the very
+    // first one at page load, which happens before the connection exists,
+    // so it's re-sent explicitly on (re)connect too rather than relying on
+    // that first onResize alone.
+    const sendResize = () => {
+      if (connection.state === signalR.HubConnectionState.Connected) {
+        connection.invoke("ResizeTerminal", term.cols, term.rows).catch(console.error);
+      }
+    };
+    term.onResize(sendResize);
+
     connection
       .start()
-      .then(() => { statusEl.textContent = "connected"; term.focus(); })
+      .then(() => { statusEl.textContent = "connected"; term.focus(); sendResize(); })
       .catch((err) => {
         statusEl.textContent = "disconnected";
         term.writeln("\\r\\n[lab] could not connect to the session API: " + err);
       });
 
     connection.onreconnecting(() => (statusEl.textContent = "reconnecting…"));
-    connection.onreconnected(() => (statusEl.textContent = "connected"));
+    connection.onreconnected(() => { statusEl.textContent = "connected"; sendResize(); });
     connection.onclose(() => (statusEl.textContent = "disconnected"));
   </script>
 </body>

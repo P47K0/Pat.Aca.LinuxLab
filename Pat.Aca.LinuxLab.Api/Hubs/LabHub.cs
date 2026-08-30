@@ -85,4 +85,7 @@ public class LabHub : Hub
 
     /// <summary>Keystrokes from the browser's terminal, relayed to this session's container PTY.</summary>
     public Task SendInput(string data) => _sessions.SendInputAsync(Context.ConnectionId, data);
+
+    /// <summary>The browser terminal's real size (from xterm's FitAddon), relayed to the container's PTY so its own line-wrapping/redraw matches what's actually visible — see ContainerConsoleClient.ResizeAsync.</summary>
+    public Task ResizeTerminal(int cols, int rows) => _sessions.ResizeAsync(Context.ConnectionId, cols, rows);
 }

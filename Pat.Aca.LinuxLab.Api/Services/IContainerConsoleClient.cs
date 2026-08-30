@@ -13,5 +13,9 @@ public interface IContainerConsoleClient
 {
     Task ConnectAsync(LabSession session, Func<string, Task> onOutput, CancellationToken ct);
     Task SendAsync(string sessionId, string data);
+
+    /// <summary>Tells the container's actual PTY the browser terminal's real size, so line-wrapping/redraw (readline, vim, less, ...) matches what's visually rendered — critical on mobile, where the visible terminal is often far narrower than the PTY's assumed default.</summary>
+    Task ResizeAsync(string sessionId, int cols, int rows);
+
     Task DisconnectAsync(string sessionId);
 }

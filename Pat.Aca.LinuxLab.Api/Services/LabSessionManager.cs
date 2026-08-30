@@ -130,6 +130,15 @@ public sealed class LabSessionManager : BackgroundService, ILabSessionManager
         return _console.SendAsync(sessionId, data);
     }
 
+    public Task ResizeAsync(string sessionId, int cols, int rows)
+    {
+        if (_sessions.TryGetValue(sessionId, out var session))
+        {
+            session.LastActivityAt = DateTimeOffset.UtcNow;
+        }
+        return _console.ResizeAsync(sessionId, cols, rows);
+    }
+
     public Task ReportProgressAsync(string sessionId, ProgressEvent evt)
     {
         if (_sessions.TryGetValue(sessionId, out var session))
