@@ -8,11 +8,17 @@ type Bindings = {
   // it) and returns { success, message } — that's koorevaar.com's own
   // response shape, confirmed from its actual source, not guessed.
   CONTACT_WORKER: Fetcher;
+  // Real Worker-version ID, changes on every deploy — see getBuildInfo.
+  CF_VERSION_METADATA: { id: string; tag: string };
+  VERSION_KV: KVNamespace;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
 
-app.get("/", (c) => c.html(renderPage(c.env.LAB_HUB_URL)));
+app.get("/", async (c) => {
+  const buildInfo = await getBuildInfo(c.env);
+  return c.html(renderPage(c.env.LAB_HUB_URL, buildInfo));
+});
 
 app.get("/healthz", (c) => c.json({ status: "ok" }));
 
@@ -51,12 +57,40 @@ function buildContactPayload(name: string, email: string, message: string) {
   return { name, email, subject: "CKA Lab feedback", message };
 }
 
+type BuildInfo = { counter: number; deployedAt: string };
+
+// A build counter computed entirely ourselves, at runtime — no CI
+// plumbing, no API token, no custom build command (see wrangler.toml's
+// comment on the two bindings this uses). CF_VERSION_METADATA.id changes
+// on every real deploy, even a redeploy of identical code — so the first
+// request that notices a different id than what's stored in KV bumps the
+// counter and remembers the new id; every request after that just reads
+// the stored value back. A low-traffic personal project like this one
+// can tolerate the tiny theoretical race if two requests both land in
+// that exact window and both increment — not worth real locking for a
+// decorative counter.
+async function getBuildInfo(env: Bindings): Promise<BuildInfo | null> {
+  const versionId = env.CF_VERSION_METADATA?.id;
+  if (!versionId || !env.VERSION_KV) return null; // e.g. local dev, or before the KV namespace is wired up
+
+  try {
+    const stored = await env.VERSION_KV.get<{ versionId: string } & BuildInfo>("build-info", "json");
+    if (stored?.versionId === versionId) return { counter: stored.counter, deployedAt: stored.deployedAt };
+
+    const info: BuildInfo = { counter: (stored?.counter ?? 0) + 1, deployedAt: new Date().toISOString().slice(0, 10) };
+    await env.VERSION_KV.put("build-info", JSON.stringify({ versionId, ...info }));
+    return info;
+  } catch {
+    return null; // never let a decorative build counter break the actual page
+  }
+}
+
 // One page: a terminal (xterm.js) wired to the API's SignalR hub, plus a
 // checklist panel that lights up as the install/upgrade simulator reports
 // progress (see the BRD's §04 diagram and §06). Cloudflare Access gates this
 // whole hostname at the edge — see the repo README — so there's no login UI
 // here, just the identity Access has already established. 
-function renderPage(hubUrl: string): string {
+function renderPage(hubUrl: string, buildInfo: BuildInfo | null): string {
   return /* html */ `<!doctype html>
 <html lang="en">
 <head>
@@ -287,6 +321,7 @@ function renderPage(hubUrl: string): string {
     <a href="https://github.com/P47K0/Pat.Aca.LinuxLab" target="_blank" rel="noopener">This lab's source</a>
     <span class="sep">·</span>
     <a href="https://github.com/P47K0/k8s-whizlabs-sandbox" target="_blank" rel="noopener">2-node sandbox scripts</a>
+    ${buildInfo ? `<span class="sep">·</span><span>build ${buildInfo.counter} (${buildInfo.deployedAt})</span>` : ""}
   </footer>
 
   <div class="modal-overlay" id="feedback-overlay">

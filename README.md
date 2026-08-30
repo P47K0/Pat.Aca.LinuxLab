@@ -105,12 +105,16 @@ Left as **explicit TODOs**, not silently assumed correct:
   available in this environment) — the shim logic was verified standalone
   instead. Worth a real `docker build` before first deploy.
 - Real (non-simulated) `apt-get install` of arbitrary packages — e.g.
-  `sudo apt-get install -y tmux` — is untested against the "no real root"
-  finding above and may not actually work: it needs real write access to
-  `/var/lib/dpkg`, `/var/cache/apt`, etc., which nothing currently grants
-  `labuser`. Fix, if confirmed broken, is the same one already applied to
-  `/etc/kubernetes` — pre-`chown` the directories `apt`/`dpkg` need to
-  `labuser` at image build time.
+  `sudo apt-get install -y tmux` — was fixed at the filesystem-permission
+  level (`labuser` now owns `/usr`, `/var`, `/opt`, and most of `/etc` —
+  see the Dockerfile), but still untested against a real `docker build` +
+  live install, same caveat as the line above.
+- The footer's build counter (`Cloudflare/ui-worker` — see "Manual
+  setup" step 3) needs a real KV namespace ID in place of the
+  `REPLACE_WITH_REAL_KV_NAMESPACE_ID` placeholder in `wrangler.toml`
+  before it'll show anything — the code degrades gracefully without it
+  (just hides that part of the footer), but hasn't been exercised
+  against a real namespace yet.
 
 ## Security & abuse limits
 
@@ -224,6 +228,24 @@ Left as **explicit TODOs**, not silently assumed correct:
    `Cloudflare/ui-worker`** — same pattern as `Pat.Aca.BlogServiceApi`'s
    workers. It builds and deploys itself on push; there's no
    `wrangler deploy` step or GitHub Actions workflow for it in this repo.
+
+   **Create the KV namespace the footer's build counter uses**, if you
+   want that (optional — the page works fine without it, the counter
+   just won't show): **Workers & Pages → KV → Create a namespace**
+   (any name, e.g. `cka-lab-build-info`), then put its ID in
+   `Cloudflare/ui-worker/wrangler.toml`'s `[[kv_namespaces]]` block in
+   place of the `REPLACE_WITH_REAL_KV_NAMESPACE_ID` placeholder. No
+   API token needed — the Worker reads/writes it through a plain
+   binding, same mechanism as the `CONTACT_WORKER` service binding
+   above. Deliberately computed this way instead of pulling a real git
+   SHA: Workers Builds' own build-time variables (`WORKERS_CI_COMMIT_SHA`
+   et al.) aren't accessible at runtime, and it doesn't honor a custom
+   build command from `wrangler.toml` at all — only from the dashboard
+   — so getting a real commit SHA onto the page would need a manual,
+   undocumented-in-this-repo dashboard step instead of just this one
+   config value. The `[version_metadata]` binding's version ID, by
+   contrast, changes on every deploy and is genuinely available at
+   runtime with zero extra configuration beyond the binding itself.
 4. **Custom domains**: `lab.koorevaar.com` → this Worker (handled by the
    Git integration in step 3); `api.lab.koorevaar.com` → the API's
    Container App, bound via **ACA → Networking → Custom domains**.

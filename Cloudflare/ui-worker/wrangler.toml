@@ -23,5 +23,23 @@ LAB_HUB_URL = "https://api.lab.koorevaar.com/hubs/lab"
 binding = "CONTACT_WORKER"
 service = "contact"
 
+# Real Worker-version ID, changes on every deploy (even a redeploy of
+# identical code) — available at runtime with no build command needed,
+# unlike Workers Builds' own WORKERS_CI_* variables (build-time only,
+# confirmed via Cloudflare's docs). Used with the KV namespace below to
+# compute a simple build counter ourselves, entirely at runtime — no
+# API token, no custom build step, no external CI plumbing.
+[version_metadata]
+binding = "CF_VERSION_METADATA"
+
+# One-time manual step required — see the README's "Manual setup":
+# create the namespace (Cloudflare dashboard or `wrangler kv namespace
+# create BUILD_INFO`) and replace the placeholder id below with the real
+# one. Until then this binding just won't resolve and the footer's
+# build-counter code below falls back to hiding it, not erroring.
+[[kv_namespaces]]
+binding = "VERSION_KV"
+id = "REPLACE_WITH_REAL_KV_NAMESPACE_ID"
+
 [observability]
 enabled = true
