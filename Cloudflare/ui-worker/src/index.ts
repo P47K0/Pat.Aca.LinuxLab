@@ -63,6 +63,12 @@ function renderPage(hubUrl: string): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CKA Practice Lab</title>
+<!-- A terminal prompt (">_"), inline as base64 SVG so it needs no extra
+     asset route or build step — matches the rest of this file's
+     no-bundler approach. Colors are the page's own --ground/--ok tokens,
+     kept literal here since favicons load before any CSS custom
+     properties in this document could apply to them. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+CiAgPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzBkMTIxNiIvPgogIDxwYXRoIGQ9Ik03IDEwbDcgNi03IDYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzVjY2E5NCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KICA8bGluZSB4MT0iMTYiIHkxPSIyMiIgeDI9IjI1IiB5Mj0iMjIiIHN0cm9rZT0iIzVjY2E5NCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KPC9zdmc+Cg==">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
 <style>
   :root {
@@ -263,7 +269,7 @@ function renderPage(hubUrl: string): string {
     <a href="https://www.koorevaar.com">koorevaar.com</a>
     <span class="brand">CKA Practice Lab</span>
     <button id="feedback-open" class="header-btn" type="button">Feedback</button>
-    <a id="coffee-link" class="header-btn" href="https://paypal.me/p47k0" target="_blank" rel="noopener">☕ <span class="btn-label">Buy me a coffee</span></a>
+    <a id="coffee-link" class="header-btn" href="https://ko-fi.com/H2J72617L3" target="_blank" rel="noopener">☕ <span class="btn-label">Buy me a coffee</span></a>
     <span id="status">connecting…</span>
   </header>
   <main>
