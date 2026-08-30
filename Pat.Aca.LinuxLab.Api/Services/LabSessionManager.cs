@@ -103,15 +103,38 @@ public sealed class LabSessionManager : BackgroundService, ILabSessionManager
 
     public async Task EndSessionAsync(string sessionId)
     {
-        if (!_sessions.TryRemove(sessionId, out var session)) return;
-        _logger.LogInformation("Ending lab session {SessionId} ({ContainerApp})", sessionId, session.ContainerAppName);
+        // Only removed from tracking once the Azure delete actually
+        // succeeds. A failed delete (a transient ARM error, an expired
+        // token, throttling — anything) leaves the session in _sessions
+        // so the next sweep just retries it, instead of either losing
+        // track of a still-running (and billing) container forever after
+        // one blip, or — the real bug this fixes — letting that failure
+        // escape uncaught and kill the sweep loop in ExecuteAsync
+        // entirely, which silently stops idle-timeout AND the 2-hour hard
+        // cap for every session, forever, for the rest of this process's
+        // life. Confirmed for real: neither limit firing for 6+ hours is
+        // exactly what that looks like from the outside.
+        if (!_sessions.TryGetValue(sessionId, out var session)) return;
 
-        await _console.DisconnectAsync(sessionId);
+        try
+        {
+            _logger.LogInformation("Ending lab session {SessionId} ({ContainerApp})", sessionId, session.ContainerAppName);
 
-        var resourceGroupId = ResourceGroupResource.CreateResourceIdentifier(_options.SubscriptionId, _options.ResourceGroup);
-        var resourceGroup = _arm.GetResourceGroupResource(resourceGroupId);
-        var app = await resourceGroup.GetContainerAppAsync(session.ContainerAppName);
-        await app.Value.DeleteAsync(Azure.WaitUntil.Started);
+            await _console.DisconnectAsync(sessionId);
+
+            var resourceGroupId = ResourceGroupResource.CreateResourceIdentifier(_options.SubscriptionId, _options.ResourceGroup);
+            var resourceGroup = _arm.GetResourceGroupResource(resourceGroupId);
+            var app = await resourceGroup.GetContainerAppAsync(session.ContainerAppName);
+            await app.Value.DeleteAsync(Azure.WaitUntil.Started);
+
+            _sessions.TryRemove(sessionId, out _);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to end session {SessionId} ({ContainerApp}) — left in tracking so the next sweep retries it",
+                sessionId, session.ContainerAppName);
+        }
     }
 
     public Task SendInputAsync(string sessionId, string data)
@@ -159,21 +182,38 @@ public sealed class LabSessionManager : BackgroundService, ILabSessionManager
 
             foreach (var session in _sessions.Values)
             {
-                if (session.LastActivityAt < idleCutoff)
+                try
                 {
-                    _logger.LogInformation(
-                        "Session {SessionId} idle past {Minutes}m — tearing down", session.SessionId, _options.IdleTimeoutMinutes);
-                    await EndSessionAsync(session.SessionId);
+                    if (session.LastActivityAt < idleCutoff)
+                    {
+                        _logger.LogInformation(
+                            "Session {SessionId} idle past {Minutes}m — tearing down", session.SessionId, _options.IdleTimeoutMinutes);
+                        await EndSessionAsync(session.SessionId);
+                    }
+                    else if (session.CreatedAt < maxAgeCutoff)
+                    {
+                        // Deliberately matches the real CKA exam's own 2-hour limit —
+                        // hitting this is itself part of the practice, not just a cost guard.
+                        _logger.LogInformation(
+                            "Session {SessionId} hit the {Minutes}m hard cap — tearing down", session.SessionId, _options.MaxSessionMinutes);
+                        await _hub.Clients.Client(session.SessionId).SendAsync(
+                            "SessionEnded", "Time's up — matches the real exam's time limit. Log back in for a fresh attempt.", stoppingToken);
+                        await EndSessionAsync(session.SessionId);
+                    }
                 }
-                else if (session.CreatedAt < maxAgeCutoff)
+                catch (Exception ex)
                 {
-                    // Deliberately matches the real CKA exam's own 2-hour limit —
-                    // hitting this is itself part of the practice, not just a cost guard.
-                    _logger.LogInformation(
-                        "Session {SessionId} hit the {Minutes}m hard cap — tearing down", session.SessionId, _options.MaxSessionMinutes);
-                    await _hub.Clients.Client(session.SessionId).SendAsync(
-                        "SessionEnded", "Time's up — matches the real exam's time limit. Log back in for a fresh attempt.", stoppingToken);
-                    await EndSessionAsync(session.SessionId);
+                    // EndSessionAsync already catches its own failures (see
+                    // there) — this is defense in depth for anything else in
+                    // this block, e.g. the SendAsync above, or whatever gets
+                    // added here later. The whole reason this try/catch
+                    // exists: a single uncaught exception anywhere in this
+                    // loop used to be able to kill ExecuteAsync entirely,
+                    // silently disabling idle-timeout AND the hard cap for
+                    // every session, forever, for the rest of this process's
+                    // life — confirmed for real (6+ hours, neither limit
+                    // firing, no crash visible anywhere).
+                    _logger.LogError(ex, "Unexpected error tearing down session {SessionId} — continuing sweep", session.SessionId);
                 }
             }
 
