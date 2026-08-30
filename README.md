@@ -149,6 +149,15 @@ Left as **explicit TODOs**, not silently assumed correct:
    **Free plan** → **Activate**. It asks for a credit card even though the
    free plan itself is free — that's just how Cloudflare gates the Zero
    Trust product, not a sign you're about to be charged.
+
+   **Also add the One-time PIN identity provider here, if the account
+   doesn't already have one configured** (also one-time per account) —
+   confirmed for real that this isn't on by default just from activating
+   Zero Trust, and skipping it is exactly what leaves an app with no
+   usable login method at all (see the app-level step below): **Zero
+   Trust → Identity Providers → Add an identity provider → One-time
+   PIN**. No further configuration needed — it's Cloudflare's own
+   built-in email-code login, not an external IdP.
 1. **Cloudflare Access application** covering both `lab.koorevaar.com` (the
    Worker) and the API's hostname (e.g. `api.lab.koorevaar.com`) under one
    Access app, so a single login covers both. Free tier, email allow-list —
@@ -173,10 +182,19 @@ Left as **explicit TODOs**, not silently assumed correct:
       `Owner`), action **Allow**, then under **Include** set the selector
       to **`Emails`** (not "Emails ending in") and add your specific
       address — not a domain. Save the policy, then save the application.
-   3. *Then* the Worker's own **Access** tab → **Protect this Worker** will
+   3. **On the application itself, go to its Login Methods tab** and
+      either switch on **"Accept all available identity providers"** or
+      explicitly select **One-time PIN** in the **Choose identity
+      providers** list. Easy to miss since the app otherwise looks fully
+      configured without it — confirmed for real: skipping this step is
+      what leaves the app's login page with no usable way in at all
+      (invited users land on a generic Cloudflare page instead of an
+      email-code prompt, with no obvious link back to "add the One-time
+      PIN identity provider from step 0 above").
+   4. *Then* the Worker's own **Access** tab → **Protect this Worker** will
       let you pick that already-created policy (`Owner`) instead of being
       limited to the two canned options.
-   4. On the application's **Additional settings** (same tab as the AUD
+   5. On the application's **Additional settings** (same tab as the AUD
       tag), enable **"Bypass options requests to origin."** Without this,
       Access intercepts the CORS preflight `OPTIONS` request itself before
       it ever reaches the API — the preflight can't carry the Access auth
