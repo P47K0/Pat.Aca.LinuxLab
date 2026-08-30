@@ -55,7 +55,7 @@ function buildContactPayload(name: string, email: string, message: string) {
 // checklist panel that lights up as the install/upgrade simulator reports
 // progress (see the BRD's §04 diagram and §06). Cloudflare Access gates this
 // whole hostname at the edge — see the repo README — so there's no login UI
-// here, just the identity Access has already established.
+// here, just the identity Access has already established. 
 function renderPage(hubUrl: string): string {
   return /* html */ `<!doctype html>
 <html lang="en">
