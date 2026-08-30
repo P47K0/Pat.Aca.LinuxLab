@@ -82,7 +82,18 @@ RUN useradd -m -s /bin/bash labuser
 # means no setuid binary can newly escalate regardless of who owns it.
 # /bin, /sbin, /lib, /lib64 are symlinks into /usr on this base image
 # (confirmed via `ls -ld`), so chowning /usr already covers them.
-RUN chown -R labuser:labuser /usr /etc /var /opt
+#
+# /etc/hosts, /etc/hostname, and /etc/resolv.conf are excluded — confirmed
+# for real (a live `docker build` failure): Docker bind-mounts these three
+# specific files into every container, build stages included, so even
+# real root can't chown them. Nothing here needs to own them anyway (just
+# the ordinary world-readable access they already have). -h/--no-dereference
+# throughout so this chowns symlinks themselves rather than following them —
+# /etc/mtab on Debian/Ubuntu points into /proc, which has the same
+# "can't actually chown this" problem for the same underlying reason.
+RUN chown -R -h labuser:labuser /usr /var /opt \
+    && find /etc \( -path /etc/hosts -o -path /etc/hostname -o -path /etc/resolv.conf \) -prune \
+       -o -exec chown -h labuser:labuser {} +
 
 USER labuser
 WORKDIR /home/labuser
