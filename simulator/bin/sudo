@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# sudo shim: Azure Container Apps' exec sessions run with the kernel's "no
+# new privileges" flag set, which blocks setuid escalation outright —
+# confirmed for real against a live session ("sudo: The 'no new
+# privileges' flag is set, which prevents sudo from running as root").
+# That's the platform working as intended for a service that hands
+# invited users a raw shell — not something to route around by relaxing
+# container security — so this container was never going to get real
+# root, sudoers config or not (see the Dockerfile's history on this).
+#
+# Real exam workflows type "sudo" constantly out of muscle memory
+# (install/systemctl/kubeadm all normally need root), so rather than let
+# every one of those error out, this just runs the command as the
+# current user. That's harmless here: every "administrative" surface
+# this lab manages — package/service/cluster state via the other shims
+# in this directory, plus /etc/kubernetes — is deliberately writable by
+# labuser already (see the Dockerfile), so nothing here ever actually
+# needed real root.
+set -uo pipefail
+
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+  cat <<'EOF'
+sudo command [args...]
+
+[lab] This container can't grant real root — Azure Container Apps' exec
+sessions run with "no new privileges" set, which blocks sudo's setuid
+escalation outright. This shim just runs the command as the current
+user instead of failing on every "sudo ..." you type out of habit.
+EOF
+  exit 0
+fi
+
+if [ $# -eq 0 ]; then
+  echo "usage: sudo command [args...]" >&2
+  exit 1
+fi
+
+exec "$@"

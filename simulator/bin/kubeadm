@@ -155,6 +155,42 @@ To start using your cluster, run the following as a regular user:
   sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
   sudo chown $(id -u):$(id -g) $HOME/.kube/config
 EOF
+    # The printed instructions above are real commands (real cp/chown —
+    # "sudo" itself is shimmed too, see simulator/bin/sudo, since this
+    # container can never get real root: Azure Container Apps' exec
+    # sessions run with the kernel's "no new privileges" flag set,
+    # confirmed for real against a live session). So
+    # /etc/kubernetes/admin.conf has to genuinely exist, or "cp" fails
+    # with "No such file or directory" the moment someone follows the
+    # instructions above. /etc itself is labuser-owned as of image build
+    # time (see the Dockerfile's ownership block — the one point this
+    # image ever has real root), so a plain `mkdir`/write here needs no
+    # elevation at runtime either. Content is synthetic (no real cluster
+    # underneath) but the file and its 600 perms are real.
+    mkdir -p /etc/kubernetes
+    cat > /etc/kubernetes/admin.conf <<'KCFG'
+# [lab] synthetic kubeconfig — not connected to a real cluster
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    certificate-authority-data: LAB-SIMULATOR-FAKE-CA-DATA-Cg==
+    server: https://10.0.0.4:6443
+  name: kubernetes
+contexts:
+- context:
+    cluster: kubernetes
+    user: kubernetes-admin
+  name: kubernetes-admin@kubernetes
+current-context: kubernetes-admin@kubernetes
+preferences: {}
+users:
+- name: kubernetes-admin
+  user:
+    client-certificate-data: LAB-SIMULATOR-FAKE-CERT-DATA-Cg==
+    client-key-data: LAB-SIMULATOR-FAKE-KEY-DATA-Cg==
+KCFG
+    chmod 600 /etc/kubernetes/admin.conf
     touch "$LAB_STATE_DIR/cluster-initialized"
     lab::svc_set containerd active enabled
     lab::svc_set kubelet active enabled
@@ -230,6 +266,11 @@ EOF
   reset)
     if is_help "${1:-}"; then reset_help; exit 0; fi
     rm -f "$LAB_STATE_DIR"/cluster-* "$LAB_STATE_DIR"/upgrade-planned
+    # Only remove what "init" actually created — the directory itself
+    # would be safe to remove too now (/etc is labuser-owned as of image
+    # build time, so a later "init" could recreate it without real root
+    # either way — see the Dockerfile), but there's no reason to.
+    rm -f /etc/kubernetes/admin.conf
     echo "[reset] Deleting contents of stateful directories"
     echo "The node has been reset and is ready for a new 'kubeadm init'."
     lab::progress "kubeadm:reset" ok "cluster reset"

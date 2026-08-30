@@ -17,13 +17,28 @@ has to run *inside* the lab container, which is containers-in-a-container).
 So:
 
 - Everything **not** Kubernetes-specific — `vim`, `grep`, `awk`, `sed`,
-  `jq`, `tar`, general `systemctl`/`apt-get` use — is completely real.
+  `jq`, `tar`, general `systemctl`/`apt-get` use — is completely real, with
+  one exception: `sudo` itself is also shimmed (see below).
 - `kubeadm`, `kubectl`, and the k8s-specific parts of `apt-get`/`apt-mark`
   are **simulated**: shims in [`simulator/bin`](simulator/bin) that accept
   the real flags, enforce the real step order, and print realistic output,
   without a real cluster underneath. See [`simulator/lib.sh`](simulator/lib.sh)
   for the shared state/progress-reporting helpers, and the BRD's §06 for the
   full reasoning.
+- `sudo` is shimmed too, for an unrelated reason: Azure Container Apps'
+  exec sessions run with the kernel's "no new privileges" flag set, which
+  blocks sudo's setuid escalation outright — confirmed for real against a
+  live session (`sudo: The "no new privileges" flag is set...`). Real root
+  is never available here regardless of sudoers config, so
+  `simulator/bin/sudo` just runs the given command as `labuser` instead of
+  erroring on every `sudo ...` a real exam workflow types out of habit.
+  Transparent for everything the simulator already manages (package/
+  service/cluster state, plus `/etc/kubernetes` — pre-created
+  `labuser`-owned at image build time for exactly this reason). It's a
+  real, known gap for anything else: e.g. `sudo apt-get install -y
+  <non-k8s package>` now fails with a `dpkg`/permission error instead of
+  sudo's clearer one, since actually installing a package still needs real
+  root this container can't grant — see the TODO below.
 
 Run `simulator/bin` through a quick manual sequence yourself to see it in
 action — install → init → `kubectl get nodes` → upgrade plan/apply — the
@@ -81,6 +96,13 @@ Left as **explicit TODOs**, not silently assumed correct:
 - No Dockerfile has been built with an actual Docker daemon here (none was
   available in this environment) — the shim logic was verified standalone
   instead. Worth a real `docker build` before first deploy.
+- Real (non-simulated) `apt-get install` of arbitrary packages — e.g.
+  `sudo apt-get install -y tmux` — is untested against the "no real root"
+  finding above and may not actually work: it needs real write access to
+  `/var/lib/dpkg`, `/var/cache/apt`, etc., which nothing currently grants
+  `labuser`. Fix, if confirmed broken, is the same one already applied to
+  `/etc/kubernetes` — pre-`chown` the directories `apt`/`dpkg` need to
+  `labuser` at image build time.
 
 ## Security & abuse limits
 
