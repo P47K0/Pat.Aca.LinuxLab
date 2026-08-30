@@ -109,18 +109,24 @@ function renderPage(hubUrl: string): string {
      next to the other two. */
   header .brand { flex-shrink: 999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #status { font-family: monospace; font-size: 0.8rem; color: var(--ink-soft); flex-shrink: 0; }
-  #feedback-open {
+  /* Shared look for the header's two small action controls (Feedback,
+     Buy me a coffee) — one a <button>, one an <a>, same appearance. */
+  .header-btn {
     flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
     background: none;
     border: 1px solid var(--line);
     color: var(--ink-soft);
+    text-decoration: none;
     border-radius: 4px;
     padding: 0.3rem 0.6rem;
     font-family: inherit;
     font-size: 0.8rem;
     cursor: pointer;
   }
-  #feedback-open:hover { color: var(--ink); border-color: var(--accent); }
+  .header-btn:hover { color: var(--ink); border-color: var(--accent); }
 
   /* Popup, not a new page — stays on top of the terminal, never navigates
      away from the running session (the whole point of the request). */
@@ -209,6 +215,24 @@ function renderPage(hubUrl: string): string {
   #checklist li.ok .dot { background: var(--ok); }
   #checklist .empty { color: var(--ink-soft); font-size: 0.85rem; }
 
+  /* Deliberately thin — this page's vertical space is already tight on
+     mobile (see the breakpoint below), so this shouldn't cost the
+     terminal any more of it than it has to. */
+  footer {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.35rem 1rem;
+    border-top: 1px solid var(--line);
+    font-size: 0.75rem;
+    color: var(--ink-soft);
+  }
+  footer a { color: var(--ink-soft); text-decoration: none; }
+  footer a:hover { color: var(--accent); }
+  footer .sep { opacity: 0.5; }
+
   /* Below this, there isn't room for the terminal and the 300px sidebar
      side by side without squeezing the terminal to near-uselessness (the
      original bug report) — stack instead, terminal first since it's what
@@ -226,7 +250,11 @@ function renderPage(hubUrl: string): string {
     }
     header { padding: 0.6rem 0.8rem; gap: 0.4rem; }
     header span:not(.brand) { font-size: 0.75rem; }
-    #feedback-open { font-size: 0.75rem; padding: 0.25rem 0.5rem; }
+    .header-btn { font-size: 0.75rem; padding: 0.25rem 0.5rem; }
+    /* Text labels are the first thing to go on the coffee link on a
+       narrow screen — the emoji alone is enough, and the header is
+       already juggling four items by this point. */
+    #coffee-link .btn-label { display: none; }
   }
 </style>
 </head>
@@ -234,7 +262,8 @@ function renderPage(hubUrl: string): string {
   <header>
     <a href="https://www.koorevaar.com">koorevaar.com</a>
     <span class="brand">CKA Practice Lab</span>
-    <button id="feedback-open" type="button">Feedback</button>
+    <button id="feedback-open" class="header-btn" type="button">Feedback</button>
+    <a id="coffee-link" class="header-btn" href="https://paypal.me/p47k0" target="_blank" rel="noopener">☕ <span class="btn-label">Buy me a coffee</span></a>
     <span id="status">connecting…</span>
   </header>
   <main>
@@ -244,6 +273,11 @@ function renderPage(hubUrl: string): string {
       <ul id="checklist"><li class="empty">Nothing run yet.</li></ul>
     </aside>
   </main>
+  <footer>
+    <a href="https://github.com/P47K0/Pat.Aca.LinuxLab" target="_blank" rel="noopener">This lab's source</a>
+    <span class="sep">·</span>
+    <a href="https://github.com/P47K0/k8s-whizlabs-sandbox" target="_blank" rel="noopener">2-node sandbox scripts</a>
+  </footer>
 
   <div class="modal-overlay" id="feedback-overlay">
     <form class="modal" id="feedback-form">
