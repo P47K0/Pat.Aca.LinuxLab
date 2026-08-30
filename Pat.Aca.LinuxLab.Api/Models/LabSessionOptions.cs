@@ -23,8 +23,8 @@ public sealed class LabSessionOptions
     /// <summary>Hard ceiling regardless of activity — deliberately matches the real CKA exam's own time limit, so hitting it is itself part of the practice.</summary>
     public int MaxSessionMinutes { get; set; } = 120;
 
-    /// <summary>Caps how many new sessions one user can start per rolling hour — the real cost/abuse guard, since starting a session is what actually spins up billable Azure resources.</summary>
-    public int MaxSessionStartsPerHour { get; set; } = 5;
+    /// <summary>Caps how many new sessions one user can start per rolling hour — the real cost/abuse guard, since starting a session is what actually spins up billable Azure resources. This default is only what local dev and an unset LAB_MAX_SESSION_STARTS_PER_HOUR fall back to — production is driven by deploy-api.yml's env var (see the README).</summary>
+    public int MaxSessionStartsPerHour { get; set; } = 15;
 
     /// <summary>The frontend's own origin (e.g. "https://lab.koorevaar.com") — needed for CORS, since the browser calls this API's SignalR hub cross-origin (different subdomain).</summary>
     public string AllowedOrigin { get; set; } = "";

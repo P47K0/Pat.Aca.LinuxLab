@@ -55,8 +55,13 @@ public class LabHub : Hub
         }
         catch (SessionRateLimitExceededException ex)
         {
+            // ex.Message (logged in full here) includes the email and raw
+            // limit for diagnostics — FriendlyMessage is the sanitized,
+            // no-email version that's actually fine to put in front of the
+            // user it's rate-limiting, same "detail to logs, generic to
+            // browser" pattern as the catch-all below.
             _logger.LogWarning(ex, "Rejected session start for {User}", email);
-            await Clients.Caller.SendAsync("SessionRejected", ex.Message);
+            await Clients.Caller.SendAsync("SessionRejected", ex.FriendlyMessage);
             Context.Abort();
             return;
         }

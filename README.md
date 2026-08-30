@@ -120,11 +120,19 @@ Left as **explicit TODOs**, not silently assumed correct:
   signed JWT instead, verified server-side (see above) — arguably stronger
   than a static shared secret, since it's short-lived and tied to Access's
   own session rather than valid forever until manually rotated.
-- **Session-start rate limit**: max 5 new sessions per user per rolling
-  hour (`LabSessionOptions.MaxSessionStartsPerHour`) — this is the real
-  cost/abuse guard, since starting a session is what spins up a billable
-  Container App. `/internal/progress` also has a light fixed-window limit
-  (60/min) as basic hygiene.
+- **Session-start rate limit**: max 15 new sessions per user per rolling
+  hour (`LabSessionOptions.MaxSessionStartsPerHour`, overridable via the
+  optional `LAB_MAX_SESSION_STARTS_PER_HOUR` var — see step 6 below) —
+  this is the real cost/abuse guard, since starting a session is what
+  spins up a billable Container App. Counts *starts*, not concurrent
+  sessions, so a dropped connection's automatic reconnect (the frontend's
+  `withAutomaticReconnect()`) counts as a new one too, same as a manual
+  page reload — worth knowing if this ever trips during heavy testing.
+  Rejection sends a generic "try again in N minutes" message computed
+  from the real rolling window (`SessionRateLimitExceededException`),
+  not the raw internal message (which includes the email, log-only).
+  `/internal/progress` also has a light fixed-window limit (60/min) as
+  basic hygiene.
 - **2-hour hard session cap** (`LabSessionOptions.MaxSessionMinutes`),
   separate from the 30-minute idle timeout — deliberately matches the real
   CKA exam's own time limit, so hitting it is itself part of the practice,
@@ -261,7 +269,12 @@ Left as **explicit TODOs**, not silently assumed correct:
    `AZURE_RESOURCE_GROUP`, `ACA_ENVIRONMENT_NAME`, `CF_ACCESS_TEAM_DOMAIN`,
    `CF_ACCESS_AUDIENCE` (from step 2), `LAB_FRONTEND_ORIGIN`
    (`https://lab.koorevaar.com` — needed for CORS, since the browser calls
-   this API cross-origin from a different subdomain). `API_SELF_URL` is chicken-and-egg
+   this API cross-origin from a different subdomain). `LAB_MAX_SESSION_STARTS_PER_HOUR`
+   is optional — the workflow falls back to `15` if it's unset, so there's
+   nothing to add here just to get a working deploy; set it only if you
+   actually want a different limit, and re-run the workflow for a value
+   change to reach the running app (see "Security & abuse limits" above).
+   `API_SELF_URL` is chicken-and-egg
    (unknown until the first create prints the app's FQDN) — leave it unset
    for the first `deploy-api.yml` run, then set it and re-run. Find it as
    **Application Url** on the Container App's Overview page in the portal

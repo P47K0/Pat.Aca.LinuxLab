@@ -62,12 +62,18 @@ jobs:
             NAME=cka-lab-api
             RG=${{ vars.AZURE_RESOURCE_GROUP }}
             IMAGE=${{ vars.DOCKERHUB_USERNAME }}/cka-lab-api:${{ github.sha }}
+            # MaxSessionStartsPerHour is the only optional var here (`||`
+            # falls back to 15 if LAB_MAX_SESSION_STARTS_PER_HOUR isn't set) -
+            # everything else is required with no sensible default. Changing
+            # just the var still needs a re-run of this workflow to actually
+            # reach the running app, same as any other var here.
             ENV_VARS="LabSession__SubscriptionId=${{ secrets.AZURE_SUBSCRIPTION_ID }} \
               LabSession__ResourceGroup=$RG \
               LabSession__ContainerAppsEnvironmentName=${{ vars.ACA_ENVIRONMENT_NAME }} \
               LabSession__LabImage=${{ vars.DOCKERHUB_USERNAME }}/cka-lab:latest \
               LabSession__SelfUrl=${{ vars.API_SELF_URL }} \
               LabSession__AllowedOrigin=${{ vars.LAB_FRONTEND_ORIGIN }} \
+              LabSession__MaxSessionStartsPerHour=${{ vars.LAB_MAX_SESSION_STARTS_PER_HOUR || '15' }} \
               CloudflareAccess__TeamDomain=${{ vars.CF_ACCESS_TEAM_DOMAIN }} \
               CloudflareAccess__Audience=${{ vars.CF_ACCESS_AUDIENCE }}"
 

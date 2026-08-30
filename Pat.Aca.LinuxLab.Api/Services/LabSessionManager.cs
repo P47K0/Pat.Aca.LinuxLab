@@ -220,7 +220,15 @@ public sealed class LabSessionManager : BackgroundService, ILabSessionManager
 
         if (recent.Count >= _options.MaxSessionStartsPerHour)
         {
-            throw new SessionRateLimitExceededException(userEmail, _options.MaxSessionStartsPerHour);
+            // The stale-trim loop above already dropped anything past the
+            // window, so whatever's left at the front is genuinely the
+            // oldest still-counted start — it ages out exactly 1 hour after
+            // it was recorded, which is also exactly when this user's count
+            // drops back under the limit. That's real, not an estimate, so
+            // it's worth surfacing to the user instead of a vague "later".
+            recent.TryPeek(out var oldestStillCounted);
+            var retryAfter = (oldestStillCounted + TimeSpan.FromHours(1)) - now;
+            throw new SessionRateLimitExceededException(userEmail, _options.MaxSessionStartsPerHour, retryAfter);
         }
 
         recent.Enqueue(now);
