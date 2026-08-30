@@ -17,5 +17,4 @@ doesn't have a home yet.
 ## Possible future project: network security hardening
 
 Scoped 2026-08-30, not started. A networking-focused Azure Container Apps
-project — real portfolio value on its own. Full planning detail is kept
-out of this public repo on purpose; tracked in a private backlog instead.
+project — real portfolio value on its own.
