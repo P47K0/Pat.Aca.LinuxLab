@@ -261,12 +261,16 @@ function renderPage(hubUrl: string): string {
        narrow screen — the emoji alone is enough, and the header is
        already juggling four items by this point. */
     #coffee-link .btn-label { display: none; }
+    /* The koorevaar.com link is the least essential item in an already
+       crowded header on a phone — this page's own title/branding
+       ("CKA Practice Lab") carries the identity on its own here. */
+    .site-link { display: none; }
   }
 </style>
 </head>
 <body>
   <header>
-    <a href="https://www.koorevaar.com">koorevaar.com</a>
+    <a class="site-link" href="https://www.koorevaar.com">koorevaar.com</a>
     <span class="brand">CKA Practice Lab</span>
     <button id="feedback-open" class="header-btn" type="button">Feedback</button>
     <a id="coffee-link" class="header-btn" href="https://ko-fi.com/H2J72617L3" target="_blank" rel="noopener">☕ <span class="btn-label">Buy me a coffee</span></a>
