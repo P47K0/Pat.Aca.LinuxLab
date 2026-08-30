@@ -104,11 +104,15 @@ Left as **explicit TODOs**, not silently assumed correct:
   `/etc/kubernetes` — pre-`chown` the directories `apt`/`dpkg` need to
   `labuser` at image build time.
 - The in-page **Feedback** button (`Cloudflare/ui-worker/src/index.ts`)
-  posts to the Worker's own `/feedback` route, which forwards server-side
-  to `CONTACT_API_URL` — left empty in `wrangler.toml` until the real
-  contact API's URL and expected message shape are confirmed.
-  `buildContactPayload()` is the one place to change once they are; right
-  now it sends a placeholder `{name, email, message, source: "cka-lab"}`.
+  posts to the Worker's own `/feedback` route, which forwards in-process to
+  the `koorevaar.com` Worker's existing contact-form handler via a Cloudflare
+  **service binding** (`CONTACT_WORKER` in `wrangler.toml`) — no public URL,
+  no CORS. Request/response shapes (`{name, email, subject, message}` in,
+  `{success, message}` out) and the `/api/contact` path are confirmed
+  directly from that Worker's own source and its contact page's JS, not
+  guessed. `wrangler.toml`'s `service = "REPLACE_WITH_REAL_WORKER_NAME"` is
+  still a placeholder — swap in that Worker's actual deployed name (its own
+  `wrangler.toml`'s `name` field) before this can work.
 
 ## Security & abuse limits
 

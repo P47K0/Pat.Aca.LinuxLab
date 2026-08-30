@@ -2,7 +2,12 @@ import { Hono } from "hono";
 
 type Bindings = {
   LAB_HUB_URL: string;
-  CONTACT_API_URL: string;
+  // Service binding to koorevaar.com's own Worker — a direct in-process
+  // call, not a real network fetch, so no public URL/CORS/auth needed.
+  // Its fetch() handler runs handleContactForm() (or whatever routes to
+  // it) and returns { success, message } — that's koorevaar.com's own
+  // response shape, confirmed from its actual source, not guessed.
+  CONTACT_WORKER: Fetcher;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -12,46 +17,38 @@ app.get("/", (c) => c.html(renderPage(c.env.LAB_HUB_URL)));
 app.get("/healthz", (c) => c.json({ status: "ok" }));
 
 // Server-side proxy for the feedback form — the browser posts here
-// (same-origin, no CORS to configure anywhere), and this forwards to the
-// real contact API from Cloudflare's edge instead of the browser calling
-// it directly. Payload shape below is a placeholder until the real format
-// is confirmed — change buildContactPayload() only, nothing else in this
-// route needs to know about that shape.
+// (same-origin, no CORS to configure anywhere), and this forwards to
+// koorevaar.com's own Worker via the CONTACT_WORKER service binding
+// instead of the browser calling it directly.
 app.post("/feedback", async (c) => {
-  if (!c.env.CONTACT_API_URL) {
-    // Fails loud, not silently — same "never pretend an unconfigured
-    // value is fine" rule the API side of this project already follows.
-    return c.json({ ok: false, error: "Feedback isn't configured yet." }, 503);
-  }
-
   const body = await c.req.json().catch(() => null);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const email = typeof body?.email === "string" ? body.email.trim() : "";
   const message = typeof body?.message === "string" ? body.message.trim() : "";
 
   if (!name || !email || !message) {
-    return c.json({ ok: false, error: "Name, email, and message are all required." }, 400);
+    return c.json({ success: false, message: "Name, email, and message are all required." }, 400);
   }
 
-  const upstream = await fetch(c.env.CONTACT_API_URL, {
+  // The host here doesn't need to be real — a service binding routes
+  // straight to the target Worker's own fetch() handler, not over the
+  // network — but the path does need to match what that Worker actually
+  // dispatches on. "/api/contact" confirmed directly from koorevaar.com's
+  // own contact page JS, not guessed.
+  const upstream = await c.env.CONTACT_WORKER.fetch("https://internal/api/contact", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(buildContactPayload(name, email, message)),
   });
 
-  if (!upstream.ok) {
-    return c.json({ ok: false, error: "The contact API rejected the message." }, 502);
-  }
-
-  return c.json({ ok: true });
+  const result = await upstream.json().catch(() => ({ success: false, message: "Unexpected response from the contact worker." }));
+  return c.json(result, upstream.ok ? 200 : 502);
 });
 
 export default app;
 
-// TODO: placeholder shape — replace once the real contact API's expected
-// message format is known. Keep the change contained to this function.
 function buildContactPayload(name: string, email: string, message: string) {
-  return { name, email, message, source: "cka-lab" };
+  return { name, email, subject: "CKA Lab feedback", message };
 }
 
 // One page: a terminal (xterm.js) wired to the API's SignalR hub, plus a
@@ -407,7 +404,7 @@ function renderPage(hubUrl: string): string {
           }),
         });
         const result = await res.json();
-        if (!res.ok || !result.ok) throw new Error(result.error || "Something went wrong.");
+        if (!res.ok || !result.success) throw new Error(result.message || "Something went wrong.");
 
         feedbackStatus.className = "ok";
         feedbackStatus.textContent = "Thanks — sent!";
