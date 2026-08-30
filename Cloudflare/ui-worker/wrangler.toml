@@ -15,14 +15,13 @@ routes = [
 LAB_HUB_URL = "https://api.lab.koorevaar.com/hubs/lab"
 
 # The feedback form (/feedback route in src/index.ts) calls the
-# koorevaar.com Worker's contact-form handler directly, in-process — no
-# public URL, no CORS, no auth to configure. "service" must be that
-# Worker's actual deployed name (wrangler.toml's own `name` field over
-# there) — REPLACE_WITH_REAL_WORKER_NAME is a placeholder, not a guess to
-# trust.
+# koorevaar.com contact Worker's handleContactForm directly, in-process —
+# no public URL, no CORS, no auth to configure. Also reachable publicly at
+# contact.koorevaar.com, but the service binding below goes by Worker name
+# ("contact"), not that URL.
 [[services]]
 binding = "CONTACT_WORKER"
-service = "REPLACE_WITH_REAL_WORKER_NAME"
+service = "contact"
 
 [observability]
 enabled = true

@@ -75,6 +75,14 @@ Built and verified in this environment:
 - The API project — compiles clean against the real `Azure.ResourceManager.AppContainers`
   / `Azure.Identity` SDKs (`dotnet build`).
 - The ui-worker — typechecks clean and passes `wrangler deploy --dry-run`.
+- The in-page **Feedback** button posts to the Worker's own `/feedback`
+  route, which forwards in-process to the `koorevaar.com` Worker's
+  existing contact-form handler via a Cloudflare **service binding**
+  (`CONTACT_WORKER` in `wrangler.toml`, target `contact`) — no public URL,
+  no CORS. Request/response shapes (`{name, email, subject, message}` in,
+  `{success, message}` out) and the `/api/contact` path are confirmed
+  directly from that Worker's own source and its contact page's JS, not
+  guessed.
 
 Left as **explicit TODOs**, not silently assumed correct:
 - `ContainerConsoleClient`'s exec connection (in
@@ -103,16 +111,6 @@ Left as **explicit TODOs**, not silently assumed correct:
   `labuser`. Fix, if confirmed broken, is the same one already applied to
   `/etc/kubernetes` — pre-`chown` the directories `apt`/`dpkg` need to
   `labuser` at image build time.
-- The in-page **Feedback** button (`Cloudflare/ui-worker/src/index.ts`)
-  posts to the Worker's own `/feedback` route, which forwards in-process to
-  the `koorevaar.com` Worker's existing contact-form handler via a Cloudflare
-  **service binding** (`CONTACT_WORKER` in `wrangler.toml`) — no public URL,
-  no CORS. Request/response shapes (`{name, email, subject, message}` in,
-  `{success, message}` out) and the `/api/contact` path are confirmed
-  directly from that Worker's own source and its contact page's JS, not
-  guessed. `wrangler.toml`'s `service = "REPLACE_WITH_REAL_WORKER_NAME"` is
-  still a placeholder — swap in that Worker's actual deployed name (its own
-  `wrangler.toml`'s `name` field) before this can work.
 
 ## Security & abuse limits
 
